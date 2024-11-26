@@ -1,0 +1,50 @@
+From 00c22912448264cb22c261b57bc8c3f7318576d9 Mon Sep 17 00:00:00 2001
+From: Kloon ImKloon <kloon15@gmail.com>
+Date: Tue, 26 Nov 2024 17:06:59 +0100
+Subject: [PATCH] mediatek: filogic: Patch NVRAM params on boot
+
+---
+ .../mediatek/filogic/base-files/etc/init.d/bootcount     | 9 +++++++++
+ .../mediatek/filogic/base-files/lib/upgrade/platform.sh  | 6 +++---
+ 2 files changed, 12 insertions(+), 3 deletions(-)
+
+diff --git a/target/linux/mediatek/filogic/base-files/etc/init.d/bootcount b/target/linux/mediatek/filogic/base-files/etc/init.d/bootcount
+index e186589f28..299e80b00e 100755
+--- a/target/linux/mediatek/filogic/base-files/etc/init.d/bootcount
++++ b/target/linux/mediatek/filogic/base-files/etc/init.d/bootcount
+@@ -15,5 +15,14 @@ boot() {
+ 	zyxel,ex5700-telenor)
+ 		fw_setenv uboot_bootcount 0
+ 		;;
++	xiaomi,mi-router-ax3000t|\
++	xiaomi,mi-router-wr30u-stock|\
++	xiaomi,redmi-router-ax6000-stock)
++		local boot_rootfs=$(fw_printenv -n flag_boot_rootfs 2>/dev/null)
++		fw_setenv flag_boot_success 1
++		fw_setenv flag_last_success ${boot_rootfs}
++		fw_setenv flag_try_sys1_failed 0
++		fw_setenv flag_try_sys2_failed 0
++		;;
+ 	esac
+ }
+diff --git a/target/linux/mediatek/filogic/base-files/lib/upgrade/platform.sh b/target/linux/mediatek/filogic/base-files/lib/upgrade/platform.sh
+index 7fe2d29d31..e95d667ecb 100755
+--- a/target/linux/mediatek/filogic/base-files/lib/upgrade/platform.sh
++++ b/target/linux/mediatek/filogic/base-files/lib/upgrade/platform.sh
+@@ -43,10 +43,10 @@ xiaomi_initial_setup()
+ 	fw_setenv boot_wait on
+ 	fw_setenv uart_en 1
+ 	fw_setenv flag_boot_rootfs 0
+-	fw_setenv flag_last_success 1
++	fw_setenv flag_last_success 0
+ 	fw_setenv flag_boot_success 1
+-	fw_setenv flag_try_sys1_failed 8
+-	fw_setenv flag_try_sys2_failed 8
++	fw_setenv flag_try_sys1_failed 0
++	fw_setenv flag_try_sys2_failed 0
+ 
+ 	local board=$(board_name)
+ 	case "$board" in
+-- 
+2.47.0
+
