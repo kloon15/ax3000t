@@ -1,4 +1,4 @@
-From 401c3c22aab4b09918b43d09c2e90fea2e4a5841 Mon Sep 17 00:00:00 2001
+From 4ade4d809893fc8b252cda415822a6bd619f3551 Mon Sep 17 00:00:00 2001
 From: Dim Fish <dimfish@gmail.com>
 Date: Fri, 11 Oct 2024 19:25:29 +0300
 Subject: [PATCH] mediatek: add Airoha AN8855 gigabit switch driver
@@ -6,166 +6,187 @@ Subject: [PATCH] mediatek: add Airoha AN8855 gigabit switch driver
 New revisions of Xiaomi AX3000T with 1.0.84+ stock firmware contain new hardware.
 This commit add support for Airoha AN8855 gigabit switch driver with 6.6 kernel patches
 
-Based on https://patchwork.kernel.org/project/netdevbpf/cover/20241108132511.18801-1-ansuelsmth@gmail.com/
+Based on https://patchwork.kernel.org/project/netdevbpf/cover/20241209134459.27110-1-ansuelsmth@gmail.com/
 
 Signed-off-by: Dim Fish <dimfish@gmail.com>
 ---
- .../dts/mt7981b-xiaomi-mi-router-common.dtsi  |  171 ++
- .../files-6.6/drivers/net/dsa/an8855.c        | 2585 +++++++++++++++++
- .../files-6.6/drivers/net/dsa/an8855.h        |  753 +++++
- .../files-6.6/drivers/net/phy/air_an8855.c    |  268 ++
- target/linux/mediatek/filogic/config-6.6      |    2 +
- target/linux/mediatek/mt7622/config-6.6       |    2 +
- target/linux/mediatek/mt7623/config-6.6       |    2 +
- target/linux/mediatek/mt7629/config-6.6       |    2 +
- .../737-net-dsa-add-Airoha-AN8855.patch       |  197 ++
- 9 files changed, 3982 insertions(+)
+ .../dts/mt7981b-xiaomi-mi-router-common.dtsi  |  180 ++
+ .../files-6.6/drivers/mfd/airoha-an8855.c     |  278 ++
+ .../files-6.6/drivers/net/dsa/an8855.c        | 2311 +++++++++++++++++
+ .../files-6.6/drivers/net/dsa/an8855.h        |  783 ++++++
+ .../files-6.6/drivers/net/mdio/mdio-an8855.c  |  113 +
+ .../files-6.6/drivers/net/phy/air_an8855.c    |  267 ++
+ .../files-6.6/drivers/nvmem/an8855-efuse.c    |   63 +
+ .../include/linux/mfd/airoha-an8855-mfd.h     |   41 +
+ target/linux/mediatek/filogic/config-6.6      |    5 +
+ target/linux/mediatek/mt7622/config-6.6       |    5 +
+ target/linux/mediatek/mt7623/config-6.6       |    5 +
+ target/linux/mediatek/mt7629/config-6.6       |    5 +
+ .../737-net-dsa-add-Airoha-AN8855.patch       |  309 +++
+ ...et-phylink-move-phylink_pcs_neg_mode.patch |  166 ++
+ ...-negotiation-of-in-band-capabilities.patch | 1233 +++++++++
+ 15 files changed, 5764 insertions(+)
+ create mode 100644 target/linux/mediatek/files-6.6/drivers/mfd/airoha-an8855.c
  create mode 100644 target/linux/mediatek/files-6.6/drivers/net/dsa/an8855.c
  create mode 100644 target/linux/mediatek/files-6.6/drivers/net/dsa/an8855.h
+ create mode 100644 target/linux/mediatek/files-6.6/drivers/net/mdio/mdio-an8855.c
  create mode 100644 target/linux/mediatek/files-6.6/drivers/net/phy/air_an8855.c
+ create mode 100644 target/linux/mediatek/files-6.6/drivers/nvmem/an8855-efuse.c
+ create mode 100644 target/linux/mediatek/files-6.6/include/linux/mfd/airoha-an8855-mfd.h
  create mode 100644 target/linux/mediatek/patches-6.6/737-net-dsa-add-Airoha-AN8855.patch
+ create mode 100644 target/linux/mediatek/patches-6.6/738-net-phylink-move-phylink_pcs_neg_mode.patch
+ create mode 100644 target/linux/mediatek/patches-6.6/739-net-add-negotiation-of-in-band-capabilities.patch
 
 diff --git a/target/linux/mediatek/dts/mt7981b-xiaomi-mi-router-common.dtsi b/target/linux/mediatek/dts/mt7981b-xiaomi-mi-router-common.dtsi
-index d6872395a9017a..8ddc4c20a07cbe 100644
+index d6872395a9017a..c64b55cf6fa4ee 100644
 --- a/target/linux/mediatek/dts/mt7981b-xiaomi-mi-router-common.dtsi
 +++ b/target/linux/mediatek/dts/mt7981b-xiaomi-mi-router-common.dtsi
-@@ -83,6 +83,14 @@
+@@ -83,6 +83,11 @@
  		interrupt-parent = <&pio>;
  		interrupts = <38 IRQ_TYPE_LEVEL_HIGH>;
  	};
 +
-+	switch2: switch@1 {
-+		compatible = "airoha,an8855";
++	mfd: mfd@1 {
++		compatible = "airoha,an8855-mfd";
 +		reg = <1>;
-+		reset-gpios = <&pio 39 GPIO_ACTIVE_HIGH>;
-+		airoha,ext-surge;
-+		#nvmem-cell-cells = <0>;
 +	};
  };
  
  &switch {
-@@ -124,6 +132,169 @@
+@@ -124,6 +129,181 @@
  	};
  };
  
-+&switch2 {
-+	nvmem-layout {
-+		compatible = "fixed-layout";
-+		#address-cells = <1>;
-+		#size-cells = <1>;
++&mfd {
++	efuse {
++		compatible = "airoha,an8855-efuse";
++		#nvmem-cell-cells = <0>;
 +
-+		shift_sel_port0_tx_a: shift-sel-port0-tx-a@c {
-+			reg = <0xc 0x4>;
-+		};
++		nvmem-layout {
++			compatible = "fixed-layout";
++			#address-cells = <1>;
++			#size-cells = <1>;
 +
-+		shift_sel_port0_tx_b: shift-sel-port0-tx-b@10 {
-+			reg = <0x10 0x4>;
-+		};
++			shift_sel_port0_tx_a: shift-sel-port0-tx-a@c {
++				reg = <0xc 0x4>;
++			};
 +
-+		shift_sel_port0_tx_c: shift-sel-port0-tx-c@14 {
-+			reg = <0x14 0x4>;
-+		};
++			shift_sel_port0_tx_b: shift-sel-port0-tx-b@10 {
++				reg = <0x10 0x4>;
++			};
 +
-+		shift_sel_port0_tx_d: shift-sel-port0-tx-d@18 {
-+			reg = <0x18 0x4>;
-+		};
++			shift_sel_port0_tx_c: shift-sel-port0-tx-c@14 {
++				reg = <0x14 0x4>;
++			};
 +
-+		shift_sel_port1_tx_a: shift-sel-port1-tx-a@1c {
-+			reg = <0x1c 0x4>;
-+		};
++			shift_sel_port0_tx_d: shift-sel-port0-tx-d@18 {
++				reg = <0x18 0x4>;
++			};
 +
-+		shift_sel_port1_tx_b: shift-sel-port1-tx-b@20 {
-+			reg = <0x20 0x4>;
-+		};
++			shift_sel_port1_tx_a: shift-sel-port1-tx-a@1c {
++				reg = <0x1c 0x4>;
++			};
 +
-+		shift_sel_port1_tx_c: shift-sel-port1-tx-c@24 {
-+			reg = <0x24 0x4>;
-+		};
++			shift_sel_port1_tx_b: shift-sel-port1-tx-b@20 {
++				reg = <0x20 0x4>;
++			};
 +
-+		shift_sel_port1_tx_d: shift-sel-port1-tx-d@28 {
-+			reg = <0x28 0x4>;
-+		};
++			shift_sel_port1_tx_c: shift-sel-port1-tx-c@24 {
++				reg = <0x24 0x4>;
++			};
 +
-+		shift_sel_port2_tx_a: shift-sel-port2-tx-a@2c {
-+			reg = <0x2c 0x4>;
-+		};
++			shift_sel_port1_tx_d: shift-sel-port1-tx-d@28 {
++				reg = <0x28 0x4>;
++			};
 +
-+		shift_sel_port2_tx_b: shift-sel-port2-tx-b@30 {
-+			reg = <0x30 0x4>;
-+		};
++			shift_sel_port2_tx_a: shift-sel-port2-tx-a@2c {
++				reg = <0x2c 0x4>;
++			};
 +
-+		shift_sel_port2_tx_c: shift-sel-port2-tx-c@34 {
-+			reg = <0x34 0x4>;
-+		};
++			shift_sel_port2_tx_b: shift-sel-port2-tx-b@30 {
++				reg = <0x30 0x4>;
++			};
 +
-+		shift_sel_port2_tx_d: shift-sel-port2-tx-d@38 {
-+			reg = <0x38 0x4>;
-+		};
++			shift_sel_port2_tx_c: shift-sel-port2-tx-c@34 {
++				reg = <0x34 0x4>;
++			};
 +
-+		shift_sel_port3_tx_a: shift-sel-port3-tx-a@4c {
-+			reg = <0x4c 0x4>;
-+		};
++			shift_sel_port2_tx_d: shift-sel-port2-tx-d@38 {
++				reg = <0x38 0x4>;
++			};
 +
-+		shift_sel_port3_tx_b: shift-sel-port3-tx-b@50 {
-+			reg = <0x50 0x4>;
-+		};
++			shift_sel_port3_tx_a: shift-sel-port3-tx-a@4c {
++				reg = <0x4c 0x4>;
++			};
 +
-+		shift_sel_port3_tx_c: shift-sel-port3-tx-c@54 {
-+			reg = <0x54 0x4>;
-+		};
++			shift_sel_port3_tx_b: shift-sel-port3-tx-b@50 {
++				reg = <0x50 0x4>;
++			};
 +
-+		shift_sel_port3_tx_d: shift-sel-port3-tx-d@58 {
-+			reg = <0x58 0x4>;
++			shift_sel_port3_tx_c: shift-sel-port3-tx-c@54 {
++				reg = <0x54 0x4>;
++			};
++
++			shift_sel_port3_tx_d: shift-sel-port3-tx-d@58 {
++				reg = <0x58 0x4>;
++			};
 +		};
 +	};
 +
-+	ports {
-+		#address-cells = <1>;
-+		#size-cells = <0>;
++	ethernet-switch {
++		compatible = "airoha,an8855-switch";
++		reset-gpios = <&pio 39 GPIO_ACTIVE_HIGH>;
++		airoha,ext-surge;
 +
-+		port@0 {
-+			reg = <0>;
-+			label = "wan";
-+			phy-mode = "internal";
-+			phy-handle = <&internal_phy1>;
-+		};
++		ports {
++			#address-cells = <1>;
++			#size-cells = <0>;
 +
-+		port@1 {
-+			reg = <1>;
-+			label = "lan2";
-+			phy-mode = "internal";
-+			phy-handle = <&internal_phy2>;
-+		};
++			port@0 {
++				reg = <0>;
++				label = "wan";
++				phy-mode = "internal";
++				phy-handle = <&internal_phy1>;
++			};
 +
-+		port@2 {
-+			reg = <2>;
-+			label = "lan3";
-+			phy-mode = "internal";
-+			phy-handle = <&internal_phy3>;
-+		};
++			port@1 {
++				reg = <1>;
++				label = "lan2";
++				phy-mode = "internal";
++				phy-handle = <&internal_phy2>;
++			};
 +
-+		port@3 {
-+			reg = <3>;
-+			label = "lan4";
-+			phy-mode = "internal";
-+			phy-handle = <&internal_phy4>;
-+		};
++			port@2 {
++				reg = <2>;
++				label = "lan3";
++				phy-mode = "internal";
++				phy-handle = <&internal_phy3>;
++			};
 +
-+		port@5 {
-+			reg = <5>;
-+			label = "cpu";
-+			ethernet = <&gmac0>;
-+			phy-mode = "2500base-x";
++			port@3 {
++				reg = <3>;
++				label = "lan4";
++				phy-mode = "internal";
++				phy-handle = <&internal_phy4>;
++			};
 +
-+			fixed-link {
-+				speed = <2500>;
-+				full-duplex;
-+				pause;
++			port@5 {
++				reg = <5>;
++				label = "cpu";
++				ethernet = <&gmac0>;
++				phy-mode = "2500base-x";
++
++				fixed-link {
++					speed = <2500>;
++					full-duplex;
++					pause;
++				};
 +			};
 +		};
 +	};
 +
 +	mdio {
++		compatible = "airoha,an8855-mdio";
 +		#address-cells = <1>;
 +		#size-cells = <0>;
 +
@@ -214,59 +235,41 @@ index d6872395a9017a..8ddc4c20a07cbe 100644
  &spi0 {
  	pinctrl-names = "default";
  	pinctrl-0 = <&spi0_flash_pins>;
-diff --git a/target/linux/mediatek/files-6.6/drivers/net/dsa/an8855.c b/target/linux/mediatek/files-6.6/drivers/net/dsa/an8855.c
+diff --git a/target/linux/mediatek/files-6.6/drivers/mfd/airoha-an8855.c b/target/linux/mediatek/files-6.6/drivers/mfd/airoha-an8855.c
 new file mode 100644
-index 00000000000000..6ce7574255c32d
+index 00000000000000..eeaea348aa412c
 --- /dev/null
-+++ b/target/linux/mediatek/files-6.6/drivers/net/dsa/an8855.c
-@@ -0,0 +1,2585 @@
-+// SPDX-License-Identifier: GPL-2.0-only
++++ b/target/linux/mediatek/files-6.6/drivers/mfd/airoha-an8855.c
+@@ -0,0 +1,278 @@
++// SPDX-License-Identifier: GPL-2.0+
 +/*
-+ * Airoha AN8855 DSA Switch driver
-+ * Copyright (C) 2023 Min Yao <min.yao@airoha.com>
-+ * Copyright (C) 2024 Christian Marangi <ansuelsmth@gmail.com>
++ * MFD driver for Airoha AN8855 Switch
 + */
-+#include <linux/bitfield.h>
-+#include <linux/ethtool.h>
-+#include <linux/etherdevice.h>
-+#include <linux/gpio/consumer.h>
-+#include <linux/if_bridge.h>
-+#include <linux/iopoll.h>
++
++#include <linux/mfd/airoha-an8855-mfd.h>
++#include <linux/mfd/core.h>
 +#include <linux/mdio.h>
-+#include <linux/netdevice.h>
-+#include <linux/nvmem-provider.h>
-+#include <linux/of_mdio.h>
-+#include <linux/of_net.h>
-+#include <linux/of_platform.h>
-+#include <linux/phylink.h>
++#include <linux/module.h>
++#include <linux/phy.h>
 +#include <linux/regmap.h>
-+#include <net/dsa.h>
 +
-+#include "an8855.h"
-+
-+static const struct an8855_mib_desc an8855_mib[] = {
-+	MIB_DESC(1, AN8855_PORT_MIB_TX_DROP, "TxDrop"),
-+	MIB_DESC(1, AN8855_PORT_MIB_TX_CRC_ERR, "TxCrcErr"),
-+	MIB_DESC(1, AN8855_PORT_MIB_TX_COLLISION, "TxCollision"),
-+	MIB_DESC(1, AN8855_PORT_MIB_TX_OVERSIZE_DROP, "TxOversizeDrop"),
-+	MIB_DESC(2, AN8855_PORT_MIB_TX_BAD_PKT_BYTES, "TxBadPktBytes"),
-+	MIB_DESC(1, AN8855_PORT_MIB_RX_DROP, "RxDrop"),
-+	MIB_DESC(1, AN8855_PORT_MIB_RX_FILTERING, "RxFiltering"),
-+	MIB_DESC(1, AN8855_PORT_MIB_RX_CRC_ERR, "RxCrcErr"),
-+	MIB_DESC(1, AN8855_PORT_MIB_RX_CTRL_DROP, "RxCtrlDrop"),
-+	MIB_DESC(1, AN8855_PORT_MIB_RX_INGRESS_DROP, "RxIngressDrop"),
-+	MIB_DESC(1, AN8855_PORT_MIB_RX_ARL_DROP, "RxArlDrop"),
-+	MIB_DESC(1, AN8855_PORT_MIB_FLOW_CONTROL_DROP, "FlowControlDrop"),
-+	MIB_DESC(1, AN8855_PORT_MIB_WRED_DROP, "WredDrop"),
-+	MIB_DESC(1, AN8855_PORT_MIB_MIRROR_DROP, "MirrorDrop"),
-+	MIB_DESC(2, AN8855_PORT_MIB_RX_BAD_PKT_BYTES, "RxBadPktBytes"),
-+	MIB_DESC(1, AN8855_PORT_MIB_RXS_FLOW_SAMPLING_PKT_DROP, "RxsFlowSamplingPktDrop"),
-+	MIB_DESC(1, AN8855_PORT_MIB_RXS_FLOW_TOTAL_PKT_DROP, "RxsFlowTotalPktDrop"),
-+	MIB_DESC(1, AN8855_PORT_MIB_PORT_CONTROL_DROP, "PortControlDrop"),
++static const struct mfd_cell an8855_mfd_devs[] = {
++	{
++		.name = "an8855-efuse",
++		.of_compatible = "airoha,an8855-efuse",
++	}, {
++		.name = "an8855-switch",
++		.of_compatible = "airoha,an8855-switch",
++	}, {
++		.name = "an8855-mdio",
++		.of_compatible = "airoha,an8855-mdio",
++	}
 +};
 +
-+static int an8855_mii_set_page(struct mii_bus *bus, u8 phy_id, u8 page)
++int an8855_mii_set_page(struct an8855_mfd_priv *priv, u8 phy_id,
++			u8 page) __must_hold(&priv->bus->mdio_lock)
 +{
++	struct mii_bus *bus = priv->bus;
 +	int ret;
 +
 +	ret = __mdiobus_write(bus, phy_id, AN8855_PHY_SELECT_PAGE, page);
@@ -274,10 +277,14 @@ index 00000000000000..6ce7574255c32d
 +		dev_err_ratelimited(&bus->dev,
 +				    "failed to set an8855 mii page\n");
 +
-+	return ret;
++	/* Cache current page if next mii read/write is for switch */
++	priv->current_page = page;
++	return ret < 0 ? ret : 0;
 +}
++EXPORT_SYMBOL_GPL(an8855_mii_set_page);
 +
-+static int an8855_mii_read32(struct mii_bus *bus, u8 phy_id, u32 reg, u32 *val)
++static int an8855_mii_read32(struct mii_bus *bus, u8 phy_id, u32 reg,
++			     u32 *val) __must_hold(&bus->mdio_lock)
 +{
 +	int lo, hi, ret;
 +
@@ -317,26 +324,26 @@ index 00000000000000..6ce7574255c32d
 +
 +static int an8855_regmap_read(void *ctx, uint32_t reg, uint32_t *val)
 +{
-+	struct an8855_priv *priv = ctx;
++	struct an8855_mfd_priv *priv = ctx;
 +	struct mii_bus *bus = priv->bus;
++	u16 addr = priv->switch_addr;
 +	int ret;
 +
 +	mutex_lock_nested(&bus->mdio_lock, MDIO_MUTEX_NESTED);
-+	ret = an8855_mii_set_page(bus, priv->phy_base, AN8855_PHY_PAGE_EXTENDED_4);
++	ret = an8855_mii_set_page(priv, addr, AN8855_PHY_PAGE_EXTENDED_4);
 +	if (ret < 0)
 +		goto exit;
 +
-+	ret = an8855_mii_read32(bus, priv->phy_base,
-+				reg, val);
++	ret = an8855_mii_read32(bus, addr, reg, val);
 +
 +exit:
-+	an8855_mii_set_page(bus, priv->phy_base, AN8855_PHY_PAGE_STANDARD);
 +	mutex_unlock(&bus->mdio_lock);
 +
 +	return ret < 0 ? ret : 0;
 +}
 +
-+static int an8855_mii_write32(struct mii_bus *bus, u8 phy_id, u32 reg, u32 val)
++static int an8855_mii_write32(struct mii_bus *bus, u8 phy_id, u32 reg,
++			      u32 val) __must_hold(&bus->mdio_lock)
 +{
 +	int ret;
 +
@@ -373,48 +380,47 @@ index 00000000000000..6ce7574255c32d
 +static int
 +an8855_regmap_write(void *ctx, uint32_t reg, uint32_t val)
 +{
-+	struct an8855_priv *priv = ctx;
++	struct an8855_mfd_priv *priv = ctx;
 +	struct mii_bus *bus = priv->bus;
++	u16 addr = priv->switch_addr;
 +	int ret;
 +
 +	mutex_lock_nested(&bus->mdio_lock, MDIO_MUTEX_NESTED);
-+	ret = an8855_mii_set_page(bus, priv->phy_base, AN8855_PHY_PAGE_EXTENDED_4);
++	ret = an8855_mii_set_page(priv, addr, AN8855_PHY_PAGE_EXTENDED_4);
 +	if (ret < 0)
 +		goto exit;
 +
-+	ret = an8855_mii_write32(priv->bus, priv->phy_base,
-+				 reg, val);
++	ret = an8855_mii_write32(bus, addr, reg, val);
 +
 +exit:
-+	an8855_mii_set_page(bus, priv->phy_base, AN8855_PHY_PAGE_STANDARD);
 +	mutex_unlock(&bus->mdio_lock);
 +
 +	return ret < 0 ? ret : 0;
 +}
 +
-+static int
-+an8855_regmap_update_bits(void *ctx, uint32_t reg, uint32_t mask, uint32_t write_val)
++static int an8855_regmap_update_bits(void *ctx, uint32_t reg, uint32_t mask,
++				     uint32_t write_val)
 +{
-+	struct an8855_priv *priv = ctx;
++	struct an8855_mfd_priv *priv = ctx;
 +	struct mii_bus *bus = priv->bus;
++	u16 addr = priv->switch_addr;
 +	u32 val;
 +	int ret;
 +
 +	mutex_lock_nested(&bus->mdio_lock, MDIO_MUTEX_NESTED);
-+	ret = an8855_mii_set_page(bus, priv->phy_base, AN8855_PHY_PAGE_EXTENDED_4);
++	ret = an8855_mii_set_page(priv, addr, AN8855_PHY_PAGE_EXTENDED_4);
 +	if (ret < 0)
 +		goto exit;
 +
-+	ret = an8855_mii_read32(bus, priv->phy_base, reg, &val);
++	ret = an8855_mii_read32(bus, addr, reg, &val);
 +	if (ret < 0)
 +		goto exit;
 +
 +	val &= ~mask;
 +	val |= write_val;
-+	ret = an8855_mii_write32(bus, priv->phy_base, reg, val);
++	ret = an8855_mii_write32(bus, addr, reg, val);
 +
 +exit:
-+	an8855_mii_set_page(bus, priv->phy_base, AN8855_PHY_PAGE_STANDARD);
 +	mutex_unlock(&bus->mdio_lock);
 +
 +	return ret < 0 ? ret : 0;
@@ -465,6 +471,101 @@ index 00000000000000..6ce7574255c32d
 +	.reg_update_bits = an8855_regmap_update_bits,
 +	.disable_locking = true,
 +	.rd_table = &an8855_readable_table,
++};
++
++static int an8855_mfd_probe(struct mdio_device *mdiodev)
++{
++	struct an8855_mfd_priv *priv;
++	struct regmap *regmap;
++
++	priv = devm_kzalloc(&mdiodev->dev, sizeof(*priv), GFP_KERNEL);
++	if (!priv)
++		return -ENOMEM;
++
++	priv->bus = mdiodev->bus;
++	priv->dev = &mdiodev->dev;
++	priv->switch_addr = mdiodev->addr;
++	/* no DMA for mdiobus, mute warning for DMA mask not set */
++	priv->dev->dma_mask = &priv->dev->coherent_dma_mask;
++
++	regmap = devm_regmap_init(priv->dev, NULL, priv,
++				  &an8855_regmap_config);
++	if (IS_ERR(regmap))
++		dev_err_probe(priv->dev, PTR_ERR(priv->dev),
++			      "regmap initialization failed\n");
++
++	dev_set_drvdata(&mdiodev->dev, priv);
++
++	return devm_mfd_add_devices(priv->dev, PLATFORM_DEVID_AUTO, an8855_mfd_devs,
++				    ARRAY_SIZE(an8855_mfd_devs), NULL, 0,
++				    NULL);
++}
++
++static const struct of_device_id an8855_mfd_of_match[] = {
++	{ .compatible = "airoha,an8855-mfd" },
++	{ /* sentinel */ }
++};
++MODULE_DEVICE_TABLE(of, an8855_mfd_of_match);
++
++static struct mdio_driver an8855_mfd_driver = {
++	.probe = an8855_mfd_probe,
++	.mdiodrv.driver = {
++		.name = "an8855",
++		.of_match_table = an8855_mfd_of_match,
++	},
++};
++mdio_module_driver(an8855_mfd_driver);
++
++MODULE_AUTHOR("Christian Marangi <ansuelsmth@gmail.com>");
++MODULE_DESCRIPTION("Driver for Airoha AN8855 MFD");
++MODULE_LICENSE("GPL");
+diff --git a/target/linux/mediatek/files-6.6/drivers/net/dsa/an8855.c b/target/linux/mediatek/files-6.6/drivers/net/dsa/an8855.c
+new file mode 100644
+index 00000000000000..7dd62e1a86f105
+--- /dev/null
++++ b/target/linux/mediatek/files-6.6/drivers/net/dsa/an8855.c
+@@ -0,0 +1,2311 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * Airoha AN8855 DSA Switch driver
++ * Copyright (C) 2023 Min Yao <min.yao@airoha.com>
++ * Copyright (C) 2024 Christian Marangi <ansuelsmth@gmail.com>
++ */
++#include <linux/bitfield.h>
++#include <linux/ethtool.h>
++#include <linux/etherdevice.h>
++#include <linux/gpio/consumer.h>
++#include <linux/if_bridge.h>
++#include <linux/iopoll.h>
++#include <linux/netdevice.h>
++#include <linux/of_net.h>
++#include <linux/of_platform.h>
++#include <linux/phylink.h>
++#include <linux/platform_device.h>
++#include <linux/regmap.h>
++#include <net/dsa.h>
++
++#include "an8855.h"
++
++static const struct an8855_mib_desc an8855_mib[] = {
++	MIB_DESC(1, AN8855_PORT_MIB_TX_DROP, "TxDrop"),
++	MIB_DESC(1, AN8855_PORT_MIB_TX_CRC_ERR, "TxCrcErr"),
++	MIB_DESC(1, AN8855_PORT_MIB_TX_COLLISION, "TxCollision"),
++	MIB_DESC(1, AN8855_PORT_MIB_TX_OVERSIZE_DROP, "TxOversizeDrop"),
++	MIB_DESC(2, AN8855_PORT_MIB_TX_BAD_PKT_BYTES, "TxBadPktBytes"),
++	MIB_DESC(1, AN8855_PORT_MIB_RX_DROP, "RxDrop"),
++	MIB_DESC(1, AN8855_PORT_MIB_RX_FILTERING, "RxFiltering"),
++	MIB_DESC(1, AN8855_PORT_MIB_RX_CRC_ERR, "RxCrcErr"),
++	MIB_DESC(1, AN8855_PORT_MIB_RX_CTRL_DROP, "RxCtrlDrop"),
++	MIB_DESC(1, AN8855_PORT_MIB_RX_INGRESS_DROP, "RxIngressDrop"),
++	MIB_DESC(1, AN8855_PORT_MIB_RX_ARL_DROP, "RxArlDrop"),
++	MIB_DESC(1, AN8855_PORT_MIB_FLOW_CONTROL_DROP, "FlowControlDrop"),
++	MIB_DESC(1, AN8855_PORT_MIB_WRED_DROP, "WredDrop"),
++	MIB_DESC(1, AN8855_PORT_MIB_MIRROR_DROP, "MirrorDrop"),
++	MIB_DESC(2, AN8855_PORT_MIB_RX_BAD_PKT_BYTES, "RxBadPktBytes"),
++	MIB_DESC(1, AN8855_PORT_MIB_RXS_FLOW_SAMPLING_PKT_DROP, "RxsFlowSamplingPktDrop"),
++	MIB_DESC(1, AN8855_PORT_MIB_RXS_FLOW_TOTAL_PKT_DROP, "RxsFlowTotalPktDrop"),
++	MIB_DESC(1, AN8855_PORT_MIB_PORT_CONTROL_DROP, "PortControlDrop"),
 +};
 +
 +static int
@@ -691,6 +792,11 @@ index 00000000000000..6ce7574255c32d
 +
 +	if (flags.mask & BR_MCAST_FLOOD) {
 +		ret = regmap_update_bits(priv->regmap, AN8855_UNMF, BIT(port),
++					 flags.val & BR_MCAST_FLOOD ? BIT(port) : 0);
++		if (ret)
++			return ret;
++
++		ret = regmap_update_bits(priv->regmap, AN8855_UNIPMF, BIT(port),
 +					 flags.val & BR_MCAST_FLOOD ? BIT(port) : 0);
 +		if (ret)
 +			return ret;
@@ -1616,80 +1722,6 @@ index 00000000000000..6ce7574255c32d
 +	an8855_port_set_status(ds->priv, port, false);
 +}
 +
-+static int an8855_set_mac_eee(struct dsa_switch *ds, int port,
-+			      struct ethtool_eee *eee)
-+{
-+	struct an8855_priv *priv = ds->priv;
-+	u32 reg;
-+	int ret;
-+
-+	if (eee->eee_enabled) {
-+		ret = regmap_read(priv->regmap, AN8855_PMCR_P(port), &reg);
-+		if (ret)
-+			return ret;
-+		/* Force enable EEE if force mode and LINK */
-+		if (reg & AN8855_PMCR_FORCE_MODE &&
-+		    reg & AN8855_PMCR_FORCE_LNK) {
-+			switch (reg & AN8855_PMCR_FORCE_SPEED) {
-+			case AN8855_PMCR_FORCE_SPEED_1000:
-+				reg |= AN8855_PMCR_FORCE_EEE1G;
-+				break;
-+			case AN8855_PMCR_FORCE_SPEED_100:
-+				reg |= AN8855_PMCR_FORCE_EEE100;
-+				break;
-+			default:
-+				break;
-+			}
-+			ret = regmap_write(priv->regmap, AN8855_PMCR_P(port), reg);
-+			if (ret)
-+				return ret;
-+		}
-+		ret = regmap_update_bits(priv->regmap, AN8855_PMEEECR_P(port),
-+					 AN8855_LPI_MODE_EN,
-+					 eee->tx_lpi_enabled ? AN8855_LPI_MODE_EN : 0);
-+		if (ret)
-+			return ret;
-+	} else {
-+		ret = regmap_clear_bits(priv->regmap, AN8855_PMCR_P(port),
-+					AN8855_PMCR_FORCE_EEE1G |
-+					AN8855_PMCR_FORCE_EEE100);
-+		if (ret)
-+			return ret;
-+
-+		ret = regmap_clear_bits(priv->regmap, AN8855_PMEEECR_P(port),
-+					AN8855_LPI_MODE_EN);
-+		if (ret)
-+			return ret;
-+	}
-+
-+	return 0;
-+}
-+
-+static int an8855_get_mac_eee(struct dsa_switch *ds, int port,
-+			      struct ethtool_eee *eee)
-+{
-+	struct an8855_priv *priv = ds->priv;
-+	u32 reg;
-+	int ret;
-+
-+	ret = regmap_read(priv->regmap, AN8855_PMEEECR_P(port), &reg);
-+	if (ret)
-+		return ret;
-+	eee->tx_lpi_enabled = reg & AN8855_LPI_MODE_EN;
-+
-+	ret = regmap_read(priv->regmap, AN8855_CKGCR, &reg);
-+	if (ret)
-+		return ret;
-+	/* Global LPI TXIDLE Threshold, default 60ms (unit 2us) */
-+	eee->tx_lpi_timer = FIELD_GET(AN8855_LPI_TXIDLE_THD_MASK, reg) / 500;
-+
-+	ret = regmap_read(priv->regmap, AN8855_PMSR_P(port), &reg);
-+	if (ret)
-+		return ret;
-+
-+	return 0;
-+}
-+
 +static u32 en8855_get_phy_flags(struct dsa_switch *ds, int port)
 +{
 +	struct an8855_priv *priv = ds->priv;
@@ -1711,53 +1743,80 @@ index 00000000000000..6ce7574255c32d
 +	return DSA_TAG_PROTO_MTK;
 +}
 +
-+static int an8855_phy_read(struct mii_bus *bus, int phy, int regnum)
++/* Similar to MT7530 also trap link local frame and special frame to CPU */
++static int an8855_trap_special_frames(struct an8855_priv *priv)
 +{
-+	struct an8855_priv *priv = bus->priv;
++	int ret;
 +
-+	return mdiobus_read_nested(priv->bus, phy, regnum);
-+}
-+
-+static int an8855_phy_write(struct mii_bus *bus, int phy, int regnum, u16 val)
-+{
-+	struct an8855_priv *priv = bus->priv;
-+
-+	return mdiobus_write_nested(priv->bus, phy, regnum, val);
-+}
-+
-+static int an8855_mdio_setup(struct an8855_priv *priv)
-+{
-+	struct dsa_switch *ds = priv->ds;
-+	struct device *dev = priv->dev;
-+	struct device_node *np;
-+	struct mii_bus *bus;
-+	int ret = 0;
-+
-+	np = of_get_child_by_name(priv->dev->of_node, "mdio");
-+	if (!np || !of_device_is_available(np))
-+		goto exit;
-+
-+	bus = devm_mdiobus_alloc(priv->dev);
-+	if (!bus) {
-+		ret = -ENOMEM;
-+		goto exit;
-+	}
-+
-+	bus->priv = priv;
-+	bus->name = KBUILD_MODNAME "-mii";
-+	snprintf(bus->id, MII_BUS_ID_SIZE, KBUILD_MODNAME "-%d.%d",
-+		 ds->dst->index, ds->index);
-+	bus->parent = dev;
-+	bus->read = an8855_phy_read;
-+	bus->write = an8855_phy_write;
-+
-+	ret = devm_of_mdiobus_register(dev, bus, np);
++	/* Trap BPDUs to the CPU port(s) and egress them
++	 * VLAN-untagged.
++	 */
++	ret = regmap_update_bits(priv->regmap, AN8855_BPC,
++				 AN8855_BPDU_BPDU_FR | AN8855_BPDU_EG_TAG |
++				 AN8855_BPDU_PORT_FW,
++				 AN8855_BPDU_BPDU_FR |
++				 FIELD_PREP(AN8855_BPDU_EG_TAG, AN8855_VLAN_EG_UNTAGGED) |
++				 FIELD_PREP(AN8855_BPDU_PORT_FW, AN8855_BPDU_CPU_ONLY));
 +	if (ret)
-+		dev_err(dev, "failed to register MDIO bus: %d", ret);
++		return ret;
 +
-+exit:
-+	of_node_put(np);
-+	return ret;
++	/* Trap 802.1X PAE frames to the CPU port(s) and egress them
++	 * VLAN-untagged.
++	 */
++	ret = regmap_update_bits(priv->regmap, AN8855_PAC,
++				 AN8855_PAE_BPDU_FR | AN8855_PAE_EG_TAG |
++				 AN8855_PAE_PORT_FW,
++				 AN8855_PAE_BPDU_FR |
++				 FIELD_PREP(AN8855_PAE_EG_TAG, AN8855_VLAN_EG_UNTAGGED) |
++				 FIELD_PREP(AN8855_PAE_PORT_FW, AN8855_BPDU_CPU_ONLY));
++	if (ret)
++		return ret;
++
++	/* Trap frames with :01 MAC DAs to the CPU port(s) and egress
++	 * them VLAN-untagged.
++	 */
++	ret = regmap_update_bits(priv->regmap, AN8855_RGAC1,
++				 AN8855_R01_BPDU_FR | AN8855_R01_EG_TAG |
++				 AN8855_R01_PORT_FW,
++				 AN8855_R01_BPDU_FR |
++				 FIELD_PREP(AN8855_R01_EG_TAG, AN8855_VLAN_EG_UNTAGGED) |
++				 FIELD_PREP(AN8855_R01_PORT_FW, AN8855_BPDU_CPU_ONLY));
++	if (ret)
++		return ret;
++
++	/* Trap frames with :02 MAC DAs to the CPU port(s) and egress
++	 * them VLAN-untagged.
++	 */
++	ret = regmap_update_bits(priv->regmap, AN8855_RGAC1,
++				 AN8855_R02_BPDU_FR | AN8855_R02_EG_TAG |
++				 AN8855_R02_PORT_FW,
++				 AN8855_R02_BPDU_FR |
++				 FIELD_PREP(AN8855_R02_EG_TAG, AN8855_VLAN_EG_UNTAGGED) |
++				 FIELD_PREP(AN8855_R02_PORT_FW, AN8855_BPDU_CPU_ONLY));
++	if (ret)
++		return ret;
++
++	/* Trap frames with :03 MAC DAs to the CPU port(s) and egress
++	 * them VLAN-untagged.
++	 */
++	ret = regmap_update_bits(priv->regmap, AN8855_RGAC1,
++				 AN8855_R03_BPDU_FR | AN8855_R03_EG_TAG |
++				 AN8855_R03_PORT_FW,
++				 AN8855_R03_BPDU_FR |
++				 FIELD_PREP(AN8855_R03_EG_TAG, AN8855_VLAN_EG_UNTAGGED) |
++				 FIELD_PREP(AN8855_R03_PORT_FW, AN8855_BPDU_CPU_ONLY));
++	if (ret)
++		return ret;
++
++	/* Trap frames with :0E MAC DAs to the CPU port(s) and egress
++	 * them VLAN-untagged.
++	 */
++	return regmap_update_bits(priv->regmap, AN8855_RGAC1,
++				  AN8855_R0E_BPDU_FR | AN8855_R0E_EG_TAG |
++				  AN8855_R0E_PORT_FW,
++				  AN8855_R0E_BPDU_FR |
++				  FIELD_PREP(AN8855_R0E_EG_TAG, AN8855_VLAN_EG_UNTAGGED) |
++				  FIELD_PREP(AN8855_R0E_PORT_FW, AN8855_BPDU_CPU_ONLY));
 +}
 +
 +static int
@@ -1786,11 +1845,6 @@ index 00000000000000..6ce7574255c32d
 +	struct dsa_port *dp;
 +	int ret;
 +
-+	/* Setup mdio BUS for internal PHY */
-+	ret = an8855_mdio_setup(priv);
-+	if (ret)
-+		return ret;
-+
 +	/* Enable and reset MIB counters */
 +	ret = an8855_mib_init(priv);
 +	if (ret)
@@ -1808,12 +1862,6 @@ index 00000000000000..6ce7574255c32d
 +		if (ret)
 +			return ret;
 +
-+		/* Disable Learning on user ports */
-+		ret = regmap_set_bits(priv->regmap, AN8855_PSC_P(dp->index),
-+				      AN8855_SA_DIS);
-+		if (ret)
-+			return ret;
-+
 +		/* Disable Broadcast Forward on user ports */
 +		ret = regmap_clear_bits(priv->regmap, AN8855_BCF, BIT(dp->index));
 +		if (ret)
@@ -1826,6 +1874,10 @@ index 00000000000000..6ce7574255c32d
 +
 +		/* Disable Unknown Multicast Forward on user ports */
 +		ret = regmap_clear_bits(priv->regmap, AN8855_UNMF, BIT(dp->index));
++		if (ret)
++			return ret;
++
++		ret = regmap_clear_bits(priv->regmap, AN8855_UNIPMF, BIT(dp->index));
 +		if (ret)
 +			return ret;
 +
@@ -1871,11 +1923,6 @@ index 00000000000000..6ce7574255c32d
 +	if (ret)
 +		return ret;
 +
-+	/* Enable Learning on CPU port */
-+	ret = regmap_clear_bits(priv->regmap, AN8855_PSC_P(AN8855_CPU_PORT), AN8855_SA_DIS);
-+	if (ret)
-+		return ret;
-+
 +	/* Enable Broadcast Forward on CPU port */
 +	ret = regmap_set_bits(priv->regmap, AN8855_BCF, BIT(AN8855_CPU_PORT));
 +	if (ret)
@@ -1891,13 +1938,25 @@ index 00000000000000..6ce7574255c32d
 +	if (ret)
 +		return ret;
 +
-+	/* BPDU to CPU port */
-+	ret = regmap_update_bits(priv->regmap, AN8855_BPC, AN8855_BPDU_PORT_FW,
-+				 FIELD_PREP(AN8855_BPDU_PORT_FW, AN8855_BPDU_CPU_ONLY));
++	ret = regmap_set_bits(priv->regmap, AN8855_UNIPMF, BIT(AN8855_CPU_PORT));
++	if (ret)
++		return ret;
++
++	/* Setup Trap special frame to CPU rules */
++	ret = an8855_trap_special_frames(priv);
 +	if (ret)
 +		return ret;
 +
 +	dsa_switch_for_each_port(dp, ds) {
++		/* Disable Learning on all ports.
++		 * Learning on CPU is disabled for fdb isolation and handled by
++		 * assisted_learning_on_cpu_port.
++		 */
++		ret = regmap_set_bits(priv->regmap, AN8855_PSC_P(dp->index),
++				      AN8855_SA_DIS);
++		if (ret)
++			return ret;
++
 +		/* Enable consistent egress tag (for VLAN unware VLAN-passtrough) */
 +		ret = regmap_update_bits(priv->regmap, AN8855_PVC_P(dp->index),
 +					 AN8855_PVC_EG_TAG,
@@ -1934,12 +1993,14 @@ index 00000000000000..6ce7574255c32d
 +			      FIELD_MAX(AN8855_AGE_UNIT) *
 +			      AN8855_L2_AGING_MS_CONSTANT;
 +
++	/* Enable assisted learning for fdb isolation */
++	ds->assisted_learning_on_cpu_port = true;
++
 +	return 0;
 +}
 +
-+static struct phylink_pcs *
-+an8855_phylink_mac_select_pcs(struct phylink_config *config,
-+			      phy_interface_t interface)
++static struct phylink_pcs *an8855_phylink_mac_select_pcs(struct phylink_config *config,
++							 phy_interface_t interface)
 +{
 +	struct dsa_port *dp = dsa_phylink_to_port(config);
 +	struct an8855_priv *priv = dp->ds->priv;
@@ -1953,9 +2014,9 @@ index 00000000000000..6ce7574255c32d
 +	}
 +}
 +
-+static void
-+an8855_phylink_mac_config(struct phylink_config *config, unsigned int mode,
-+			  const struct phylink_link_state *state)
++static void an8855_phylink_mac_config(struct phylink_config *config,
++				      unsigned int mode,
++				      const struct phylink_link_state *state)
 +{
 +	struct dsa_port *dp = dsa_phylink_to_port(config);
 +	struct dsa_switch *ds = dp->ds;
@@ -1964,11 +2025,9 @@ index 00000000000000..6ce7574255c32d
 +
 +	priv = ds->priv;
 +
-+	if (port != 5) {
-+		if (port > 5)
-+			dev_err(ds->dev, "unsupported port: %d", port);
++	/* Nothing to configure for internal ports */
++	if (port != 5)
 +		return;
-+	}
 +
 +	regmap_update_bits(priv->regmap, AN8855_PMCR_P(port),
 +			   AN8855_PMCR_IFG_XMIT | AN8855_PMCR_MAC_MODE |
@@ -2002,12 +2061,12 @@ index 00000000000000..6ce7574255c32d
 +	}
 +
 +	config->mac_capabilities = MAC_ASYM_PAUSE | MAC_SYM_PAUSE |
-+				   MAC_10 | MAC_100 | MAC_1000FD;
++				   MAC_10 | MAC_100 | MAC_1000FD | MAC_2500FD;
 +}
 +
-+static void
-+an8855_phylink_mac_link_down(struct phylink_config *config, unsigned int mode,
-+			     phy_interface_t interface)
++static void an8855_phylink_mac_link_down(struct phylink_config *config,
++					 unsigned int mode,
++					 phy_interface_t interface)
 +{
 +	struct dsa_port *dp = dsa_phylink_to_port(config);
 +	struct an8855_priv *priv = dp->ds->priv;
@@ -2024,11 +2083,10 @@ index 00000000000000..6ce7574255c32d
 +	}
 +}
 +
-+static void
-+an8855_phylink_mac_link_up(struct phylink_config *config,
-+			   struct phy_device *phydev, unsigned int mode,
-+			   phy_interface_t interface, int speed, int duplex,
-+			   bool tx_pause, bool rx_pause)
++static void an8855_phylink_mac_link_up(struct phylink_config *config,
++				       struct phy_device *phydev, unsigned int mode,
++				       phy_interface_t interface, int speed,
++				       int duplex, bool tx_pause, bool rx_pause)
 +{
 +	struct dsa_port *dp = dsa_phylink_to_port(config);
 +	struct an8855_priv *priv = dp->ds->priv;
@@ -2056,8 +2114,8 @@ index 00000000000000..6ce7574255c32d
 +			reg |= AN8855_PMCR_FORCE_SPEED_2500;
 +			break;
 +		case SPEED_5000:
-+			reg |= AN8855_PMCR_FORCE_SPEED_5000;
-+			break;
++			dev_err(priv->dev, "Missing support for 5G speed. Aborting...\n");
++			return;
 +		}
 +
 +		reg &= ~AN8855_PMCR_FORCE_FDX;
@@ -2080,6 +2138,17 @@ index 00000000000000..6ce7574255c32d
 +	reg |= AN8855_PMCR_TX_EN | AN8855_PMCR_RX_EN;
 +
 +	regmap_write(priv->regmap, AN8855_PMCR_P(port), reg);
++}
++
++static unsigned int an8855_pcs_inband_caps(struct phylink_pcs *pcs,
++					   phy_interface_t interface)
++{
++	/* SGMII can be configured to use inband with AN result */
++	if (interface == PHY_INTERFACE_MODE_SGMII)
++		return LINK_INBAND_DISABLE | LINK_INBAND_ENABLE;
++
++	/* inband is not supported in 2500-baseX and must be disabled */
++	return  LINK_INBAND_DISABLE;
 +}
 +
 +static void an8855_pcs_get_state(struct phylink_pcs *pcs,
@@ -2114,8 +2183,8 @@ index 00000000000000..6ce7574255c32d
 +		state->speed = SPEED_2500;
 +		break;
 +	case AN8855_PMSR_SPEED_5000:
-+		state->speed = SPEED_5000;
-+		break;
++		dev_err(priv->dev, "Missing support for 5G speed. Setting Unknown.\n");
++		fallthrough;
 +	default:
 +		state->speed = SPEED_UNKNOWN;
 +		break;
@@ -2135,19 +2204,6 @@ index 00000000000000..6ce7574255c32d
 +	struct an8855_priv *priv = container_of(pcs, struct an8855_priv, pcs);
 +	u32 val;
 +	int ret;
-+
-+	switch (interface) {
-+	case PHY_INTERFACE_MODE_SGMII:
-+		break;
-+	case PHY_INTERFACE_MODE_2500BASEX:
-+		if (neg_mode == PHYLINK_PCS_NEG_INBAND_ENABLED) {
-+			dev_err(priv->dev, "in-band negotiation unsupported");
-+			return -EINVAL;
-+		}
-+		break;
-+	default:
-+		return -EINVAL;
-+	}
 +
 +	/*                   !!! WELCOME TO HELL !!!                   */
 +
@@ -2564,12 +2620,19 @@ index 00000000000000..6ce7574255c32d
 +	if (ret)
 +		return ret;
 +
-+	if (interface == PHY_INTERFACE_MODE_SGMII &&
-+	    neg_mode == PHYLINK_PCS_NEG_INBAND_DISABLED) {
-+		ret = regmap_set_bits(priv->regmap, AN8855_PHY_RX_FORCE_CTRL_0,
-+				      AN8855_RG_FORCE_TXC_SEL);
-+		if (ret)
-+			return ret;
++	if (interface == PHY_INTERFACE_MODE_SGMII) {
++		/* Follow SDK init flow with restarting AN after AN enable */
++		if (neg_mode == PHYLINK_PCS_NEG_INBAND_ENABLED) {
++			ret = regmap_set_bits(priv->regmap, AN8855_SGMII_REG_AN0,
++					      BMCR_ANRESTART);
++			if (ret)
++				return ret;
++		} else {
++			ret = regmap_set_bits(priv->regmap, AN8855_PHY_RX_FORCE_CTRL_0,
++					      AN8855_RG_FORCE_TXC_SEL);
++			if (ret)
++				return ret;
++		}
 +	}
 +
 +	/* Force Speed with fixed-link or 2500base-x as doesn't support aneg */
@@ -2613,12 +2676,11 @@ index 00000000000000..6ce7574255c32d
 +
 +static void an8855_pcs_an_restart(struct phylink_pcs *pcs)
 +{
-+	struct an8855_priv *priv = container_of(pcs, struct an8855_priv, pcs);
-+
-+	regmap_set_bits(priv->regmap, AN8855_SGMII_REG_AN0, BMCR_ANRESTART);
++	return;
 +}
 +
 +static const struct phylink_pcs_ops an8855_pcs_ops = {
++	.pcs_inband_caps = an8855_pcs_inband_caps,
 +	.pcs_get_state = an8855_pcs_get_state,
 +	.pcs_config = an8855_pcs_config,
 +	.pcs_an_restart = an8855_pcs_an_restart,
@@ -2644,8 +2706,6 @@ index 00000000000000..6ce7574255c32d
 +	.get_rmon_stats = an8855_get_rmon_stats,
 +	.port_enable = an8855_port_enable,
 +	.port_disable = an8855_port_disable,
-+	.get_mac_eee = an8855_get_mac_eee,
-+	.set_mac_eee = an8855_set_mac_eee,
 +	.set_ageing_time = an8855_set_ageing_time,
 +	.port_bridge_join = an8855_port_bridge_join,
 +	.port_bridge_leave = an8855_port_bridge_leave,
@@ -2678,7 +2738,7 @@ index 00000000000000..6ce7574255c32d
 +
 +	if (id != AN8855_ID) {
 +		dev_err(priv->dev,
-+			"Switch id detected %x but expected %x",
++			"Switch id detected %x but expected %x\n",
 +			id, AN8855_ID);
 +		return -ENODEV;
 +	}
@@ -2686,50 +2746,17 @@ index 00000000000000..6ce7574255c32d
 +	return 0;
 +}
 +
-+static int an8855_efuse_read(void *context, unsigned int offset,
-+			     void *val, size_t bytes)
-+{
-+	struct an8855_priv *priv = context;
-+
-+	return regmap_bulk_read(priv->regmap, AN8855_EFUSE_DATA0 + offset,
-+				val, bytes / sizeof(u32));
-+}
-+
-+static struct nvmem_config an8855_nvmem_config = {
-+	.name = "an8855-efuse",
-+	.size = AN8855_EFUSE_CELL * sizeof(u32),
-+	.stride = sizeof(u32),
-+	.word_size = sizeof(u32),
-+	.reg_read = an8855_efuse_read,
-+};
-+
-+static int an8855_sw_register_nvmem(struct an8855_priv *priv)
-+{
-+	struct nvmem_device *nvmem;
-+
-+	an8855_nvmem_config.priv = priv;
-+	an8855_nvmem_config.dev = priv->dev;
-+	nvmem = devm_nvmem_register(priv->dev, &an8855_nvmem_config);
-+	if (IS_ERR(nvmem))
-+		return PTR_ERR(nvmem);
-+
-+	return 0;
-+}
-+
-+static int
-+an8855_sw_probe(struct mdio_device *mdiodev)
++static int an8855_switch_probe(struct platform_device *pdev)
 +{
 +	struct an8855_priv *priv;
 +	u32 val;
 +	int ret;
 +
-+	priv = devm_kzalloc(&mdiodev->dev, sizeof(*priv), GFP_KERNEL);
++	priv = devm_kzalloc(&pdev->dev, sizeof(*priv), GFP_KERNEL);
 +	if (!priv)
 +		return -ENOMEM;
 +
-+	priv->bus = mdiodev->bus;
-+	priv->dev = &mdiodev->dev;
-+	priv->phy_base = mdiodev->addr;
++	priv->dev = &pdev->dev;
 +	priv->phy_require_calib = of_property_read_bool(priv->dev->of_node,
 +							"airoha,ext-surge");
 +
@@ -2738,12 +2765,8 @@ index 00000000000000..6ce7574255c32d
 +	if (IS_ERR(priv->reset_gpio))
 +		return PTR_ERR(priv->reset_gpio);
 +
-+	priv->regmap = devm_regmap_init(priv->dev, NULL, priv,
-+					&an8855_regmap_config);
-+	if (IS_ERR(priv->regmap)) {
-+		dev_err(priv->dev, "regmap initialization failed");
-+		return PTR_ERR(priv->regmap);
-+	}
++	/* Get regmap from MFD */
++	priv->regmap = dev_get_regmap(priv->dev->parent, NULL);
 +
 +	if (priv->reset_gpio) {
 +		usleep_range(100000, 150000);
@@ -2777,29 +2800,37 @@ index 00000000000000..6ce7574255c32d
 +	priv->pcs.neg_mode = true;
 +	priv->pcs.poll = true;
 +
-+	ret = an8855_sw_register_nvmem(priv);
-+	if (ret)
-+		return ret;
-+
 +	dev_set_drvdata(priv->dev, priv);
 +
-+	return devm_dsa_register_switch(priv->dev, priv->ds);
++	return dsa_register_switch(priv->ds);
 +}
 +
-+static const struct of_device_id an8855_of_match[] = {
-+	{ .compatible = "airoha,an8855" },
++static int an8855_switch_remove(struct platform_device *pdev)
++{
++	struct an8855_priv *priv = dev_get_drvdata(&pdev->dev);
++
++	if (!priv)
++		return 0;
++
++	dsa_unregister_switch(priv->ds);
++	return 0;
++}
++
++static const struct of_device_id an8855_switch_of_match[] = {
++	{ .compatible = "airoha,an8855-switch" },
 +	{ /* sentinel */ }
 +};
++MODULE_DEVICE_TABLE(of, an8855_switch_of_match);
 +
-+static struct mdio_driver an8855_mdio_driver = {
-+	.probe = an8855_sw_probe,
-+	.mdiodrv.driver = {
-+		.name = "an8855",
-+		.of_match_table = an8855_of_match,
++static struct platform_driver an8855_switch_driver = {
++	.probe = an8855_switch_probe,
++	.remove = an8855_switch_remove,
++	.driver = {
++		.name = "an8855-switch",
++		.of_match_table = an8855_switch_of_match,
 +	},
 +};
-+
-+mdio_module_driver(an8855_mdio_driver);
++module_platform_driver(an8855_switch_driver);
 +
 +MODULE_AUTHOR("Min Yao <min.yao@airoha.com>");
 +MODULE_AUTHOR("Christian Marangi <ansuelsmth@gmail.com>");
@@ -2807,10 +2838,10 @@ index 00000000000000..6ce7574255c32d
 +MODULE_LICENSE("GPL");
 diff --git a/target/linux/mediatek/files-6.6/drivers/net/dsa/an8855.h b/target/linux/mediatek/files-6.6/drivers/net/dsa/an8855.h
 new file mode 100644
-index 00000000000000..632c0e511bc374
+index 00000000000000..2462b9d33752bc
 --- /dev/null
 +++ b/target/linux/mediatek/files-6.6/drivers/net/dsa/an8855.h
-@@ -0,0 +1,753 @@
+@@ -0,0 +1,783 @@
 +/* SPDX-License-Identifier: GPL-2.0-only */
 +/*
 + * Copyright (C) 2023 Min Yao <min.yao@airoha.com>
@@ -2827,7 +2858,6 @@ index 00000000000000..632c0e511bc374
 +#define AN8855_NUM_FDB_RECORDS		2048
 +#define AN8855_GPHY_SMI_ADDR_DEFAULT	1
 +#define AN8855_PORT_VID_DEFAULT		0
-+#define AN8855_EFUSE_CELL		50
 +
 +#define MTK_TAG_LEN			4
 +#define AN8855_MAX_MTU			(15360 - ETH_HLEN - ETH_FCS_LEN - MTK_TAG_LEN)
@@ -2835,26 +2865,6 @@ index 00000000000000..632c0e511bc374
 +#define AN8855_L2_AGING_MS_CONSTANT	1024
 +
 +#define AN8855_PHY_FLAGS_EN_CALIBRATION	BIT(0)
-+
-+/* MII Registers */
-+#define AN8855_PHY_SELECT_PAGE		0x1f
-+#define   AN8855_PHY_PAGE		GENMASK(2, 0)
-+#define   AN8855_PHY_PAGE_STANDARD	FIELD_PREP_CONST(AN8855_PHY_PAGE, 0x0)
-+#define   AN8855_PHY_PAGE_EXTENDED_1	FIELD_PREP_CONST(AN8855_PHY_PAGE, 0x1)
-+#define   AN8855_PHY_PAGE_EXTENDED_4	FIELD_PREP_CONST(AN8855_PHY_PAGE, 0x4)
-+
-+/* MII Registers Page 4 */
-+#define AN8855_PBUS_MODE		0x10
-+#define   AN8855_PBUS_MODE_ADDR_FIXED	0x0
-+#define AN8855_PBUS_MODE_ADDR_INCR	BIT(15)
-+#define AN8855_PBUS_WR_ADDR_HIGH	0x11
-+#define AN8855_PBUS_WR_ADDR_LOW		0x12
-+#define AN8855_PBUS_WR_DATA_HIGH	0x13
-+#define AN8855_PBUS_WR_DATA_LOW		0x14
-+#define AN8855_PBUS_RD_ADDR_HIGH	0x15
-+#define AN8855_PBUS_RD_ADDR_LOW		0x16
-+#define AN8855_PBUS_RD_DATA_HIGH	0x17
-+#define AN8855_PBUS_RD_DATA_LOW		0x18
 +
 +/*	AN8855_SCU			0x10000000 */
 +#define AN8855_RG_GPIO_LED_MODE		0x10000054
@@ -2872,9 +2882,6 @@ index 00000000000000..632c0e511bc374
 +#define AN8855_RG_GPIO_CTRL		0x1000a300
 +#define AN8855_RG_GPIO_DATA		0x1000a304
 +#define AN8855_RG_GPIO_OE		0x1000a314
-+
-+#define AN8855_EFUSE_DATA0		0x1000a500
-+#define   AN8855_EFUSE_R50O		GENMASK(30, 24)
 +
 +#define AN8855_CREV			0x10005000
 +#define   AN8855_ID			0x8855
@@ -2898,6 +2905,54 @@ index 00000000000000..632c0e511bc374
 +#define AN8855_MFC			0x10200010
 +#define   AN8855_CPU_EN			BIT(15)
 +#define   AN8855_CPU_PORT_IDX		GENMASK(12, 8)
++
++#define AN8855_PAC			0x10200024
++#define   AN8855_TAG_PAE_MANG_FR	BIT(30)
++#define   AN8855_TAG_PAE_BPDU_FR	BIT(28)
++#define   AN8855_TAG_PAE_EG_TAG		GENMASK(27, 25)
++#define   AN8855_TAG_PAE_LKY_VLAN	BIT(24)
++#define   AN8855_TAG_PAE_PRI_HIGH	BIT(23)
++#define   AN8855_TAG_PAE_MIR		GENMASK(20, 19)
++#define   AN8855_TAG_PAE_PORT_FW	GENMASK(18, 16)
++#define   AN8855_PAE_MANG_FR		BIT(14)
++#define   AN8855_PAE_BPDU_FR		BIT(12)
++#define   AN8855_PAE_EG_TAG		GENMASK(11, 9)
++#define   AN8855_PAE_LKY_VLAN		BIT(8)
++#define   AN8855_PAE_PRI_HIGH		BIT(7)
++#define   AN8855_PAE_MIR		GENMASK(4, 3)
++#define   AN8855_PAE_PORT_FW		GENMASK(2, 0)
++
++#define AN8855_RGAC1			0x10200028
++#define   AN8855_R02_MANG_FR		BIT(30)
++#define   AN8855_R02_BPDU_FR		BIT(28)
++#define   AN8855_R02_EG_TAG		GENMASK(27, 25)
++#define   AN8855_R02_LKY_VLAN		BIT(24)
++#define   AN8855_R02_PRI_HIGH		BIT(23)
++#define   AN8855_R02_MIR		GENMASK(20, 19)
++#define   AN8855_R02_PORT_FW		GENMASK(18, 16)
++#define   AN8855_R01_MANG_FR		BIT(14)
++#define   AN8855_R01_BPDU_FR		BIT(12)
++#define   AN8855_R01_EG_TAG		GENMASK(11, 9)
++#define   AN8855_R01_LKY_VLAN		BIT(8)
++#define   AN8855_R01_PRI_HIGH		BIT(7)
++#define   AN8855_R01_MIR		GENMASK(4, 3)
++#define   AN8855_R01_PORT_FW		GENMASK(2, 0)
++
++#define AN8855_RGAC2			0x1020002c
++#define   AN8855_R0E_MANG_FR		BIT(30)
++#define   AN8855_R0E_BPDU_FR		BIT(28)
++#define   AN8855_R0E_EG_TAG		GENMASK(27, 25)
++#define   AN8855_R0E_LKY_VLAN		BIT(24)
++#define   AN8855_R0E_PRI_HIGH		BIT(23)
++#define   AN8855_R0E_MIR		GENMASK(20, 19)
++#define   AN8855_R0E_PORT_FW		GENMASK(18, 16)
++#define   AN8855_R03_MANG_FR		BIT(14)
++#define   AN8855_R03_BPDU_FR		BIT(12)
++#define   AN8855_R03_EG_TAG		GENMASK(11, 9)
++#define   AN8855_R03_LKY_VLAN		BIT(8)
++#define   AN8855_R03_PRI_HIGH		BIT(7)
++#define   AN8855_R03_MIR		GENMASK(4, 3)
++#define   AN8855_R03_PORT_FW		GENMASK(2, 0)
 +
 +#define AN8855_AAC			0x102000a0
 +#define   AN8855_MAC_AUTO_FLUSH		BIT(28)
@@ -2926,8 +2981,17 @@ index 00000000000000..632c0e511bc374
 +#define   AN8855_MIRROR_PORT		GENMASK(4, 0)
 +
 +/* Registers for BPDU and PAE frame control*/
-+#define AN8855_BPC			0x102000D0
++#define AN8855_BPC			0x102000d0
++#define   AN8855_BPDU_MANG_FR		BIT(14)
++#define   AN8855_BPDU_BPDU_FR		BIT(12)
++#define   AN8855_BPDU_EG_TAG		GENMASK(11, 9)
++#define   AN8855_BPDU_LKY_VLAN		BIT(8)
++#define   AN8855_BPDU_PRI_HIGH		BIT(7)
++#define   AN8855_BPDU_MIR		GENMASK(4, 3)
 +#define   AN8855_BPDU_PORT_FW		GENMASK(2, 0)
++
++/* Registers for IP Unknown Multicast Forward control */
++#define AN8855_UNIPMF			0x102000dc
 +
 +enum an8855_bpdu_port_fw {
 +	AN8855_BPDU_FOLLOW_MFC = 0,
@@ -3021,7 +3085,7 @@ index 00000000000000..632c0e511bc374
 +#define AN8855_ATRD1			0x10200338
 +#define   AN8855_ATRD1_MAC4		GENMASK(31, 24)
 +#define   AN8855_ATRD1_MAC5		GENMASK(23, 16)
-+#define   AN8855_ATRD1_AGING		GENMASK(10, 3)
++#define   AN8855_ATRD1_AGING		GENMASK(11, 3)
 +#define AN8855_ATRD2			0x1020033c
 +#define   AN8855_ATRD2_MAC0		GENMASK(31, 24)
 +#define   AN8855_ATRD2_MAC1		GENMASK(23, 16)
@@ -3534,7 +3598,7 @@ index 00000000000000..632c0e511bc374
 +struct an8855_fdb {
 +	u16 vid;
 +	u8 port_mask;
-+	u8 aging;
++	u16 aging;
 +	u8 mac[6];
 +	bool noarp;
 +	u8 live;
@@ -3546,15 +3610,12 @@ index 00000000000000..632c0e511bc374
 +struct an8855_priv {
 +	struct device *dev;
 +	struct dsa_switch *ds;
-+	struct mii_bus *bus;
 +	struct regmap *regmap;
 +	struct gpio_desc *reset_gpio;
 +	/* Protect ATU or VLAN table access */
 +	struct mutex reg_mutex;
 +
 +	struct phylink_pcs pcs;
-+
-+	unsigned int phy_base;
 +
 +	u8 mirror_rx;
 +	u8 mirror_tx;
@@ -3564,24 +3625,142 @@ index 00000000000000..632c0e511bc374
 +};
 +
 +#endif /* __AN8855_H */
+diff --git a/target/linux/mediatek/files-6.6/drivers/net/mdio/mdio-an8855.c b/target/linux/mediatek/files-6.6/drivers/net/mdio/mdio-an8855.c
+new file mode 100644
+index 00000000000000..5feba72c021b49
+--- /dev/null
++++ b/target/linux/mediatek/files-6.6/drivers/net/mdio/mdio-an8855.c
+@@ -0,0 +1,113 @@
++// SPDX-License-Identifier: GPL-2.0+
++/*
++ * MDIO passthrough driver for Airoha AN8855 Switch
++ */
++
++#include <linux/mfd/airoha-an8855-mfd.h>
++#include <linux/module.h>
++#include <linux/of_mdio.h>
++#include <linux/platform_device.h>
++
++static int an855_phy_restore_page(struct an8855_mfd_priv *priv,
++				  int phy) __must_hold(&priv->bus->mdio_lock)
++{
++	/* Check PHY page only for addr shared with switch */
++	if (phy != priv->switch_addr)
++		return 0;
++
++	/* Don't restore page if it's not set to switch page */
++	if (priv->current_page != FIELD_GET(AN8855_PHY_PAGE,
++					    AN8855_PHY_PAGE_EXTENDED_4))
++		return 0;
++
++	/* Restore page to 0, PHY might change page right after but that
++	 * will be ignored as it won't be a switch page.
++	 */
++	return an8855_mii_set_page(priv, phy, AN8855_PHY_PAGE_STANDARD);
++}
++
++static int an8855_phy_read(struct mii_bus *bus, int phy, int regnum)
++{
++	struct an8855_mfd_priv *priv = bus->priv;
++	struct mii_bus *real_bus = priv->bus;
++	int ret;
++
++	mutex_lock_nested(&real_bus->mdio_lock, MDIO_MUTEX_NESTED);
++
++	ret = an855_phy_restore_page(priv, phy);
++	if (ret)
++		goto exit;
++
++	ret = __mdiobus_read(real_bus, phy, regnum);
++exit:
++	mutex_unlock(&real_bus->mdio_lock);
++
++	return ret;
++}
++
++static int an8855_phy_write(struct mii_bus *bus, int phy, int regnum, u16 val)
++{
++	struct an8855_mfd_priv *priv = bus->priv;
++	struct mii_bus *real_bus = priv->bus;
++	int ret;
++
++	mutex_lock_nested(&real_bus->mdio_lock, MDIO_MUTEX_NESTED);
++
++	ret = an855_phy_restore_page(priv, phy);
++	if (ret)
++		goto exit;
++
++	ret = __mdiobus_write(real_bus, phy, regnum, val);
++exit:
++	mutex_unlock(&real_bus->mdio_lock);
++
++	return ret;
++}
++
++static int an8855_mdio_probe(struct platform_device *pdev)
++{
++	struct device *dev = &pdev->dev;
++	struct an8855_mfd_priv *priv;
++	struct mii_bus *bus;
++	int ret;
++
++	/* Get priv of MFD */
++	priv = dev_get_drvdata(dev->parent);
++
++	bus = devm_mdiobus_alloc(dev);
++	if (!bus)
++		return -ENOMEM;
++
++	bus->priv = priv;
++	bus->name = KBUILD_MODNAME "-mii";
++	snprintf(bus->id, MII_BUS_ID_SIZE, KBUILD_MODNAME "-%d",
++		 priv->switch_addr);
++	bus->parent = dev;
++	bus->read = an8855_phy_read;
++	bus->write = an8855_phy_write;
++
++	ret = devm_of_mdiobus_register(dev, bus, dev->of_node);
++	if (ret)
++		return dev_err_probe(dev, ret, "failed to register MDIO bus\n");
++
++	return ret;
++}
++
++static const struct of_device_id an8855_mdio_of_match[] = {
++	{ .compatible = "airoha,an8855-mdio", },
++	{ /* sentinel */ }
++};
++MODULE_DEVICE_TABLE(of, an8855_mdio_of_match);
++
++static struct platform_driver an8855_mdio_driver = {
++	.probe	= an8855_mdio_probe,
++	.driver = {
++		.name = "an8855-mdio",
++		.of_match_table = an8855_mdio_of_match,
++	},
++};
++module_platform_driver(an8855_mdio_driver);
++
++MODULE_AUTHOR("Christian Marangi <ansuelsmth@gmail.com>");
++MODULE_DESCRIPTION("Driver for AN8855 MDIO passthrough");
++MODULE_LICENSE("GPL");
 diff --git a/target/linux/mediatek/files-6.6/drivers/net/phy/air_an8855.c b/target/linux/mediatek/files-6.6/drivers/net/phy/air_an8855.c
 new file mode 100644
-index 00000000000000..10627ea2be3873
+index 00000000000000..7fab0854ef7838
 --- /dev/null
 +++ b/target/linux/mediatek/files-6.6/drivers/net/phy/air_an8855.c
-@@ -0,0 +1,268 @@
+@@ -0,0 +1,267 @@
 +// SPDX-License-Identifier: GPL-2.0+
 +/*
 + * Copyright (C) 2024 Christian Marangi <ansuelsmth@gmail.com>
 + */
 +
-+#include <linux/phy.h>
-+#include <linux/module.h>
 +#include <linux/bitfield.h>
++#include <linux/module.h>
 +#include <linux/nvmem-consumer.h>
++#include <linux/phy.h>
 +
 +#define AN8855_PHY_SELECT_PAGE			0x1f
-+/* Mask speculation based on page up to 0x4 */
 +#define   AN8855_PHY_PAGE			GENMASK(2, 0)
 +#define   AN8855_PHY_PAGE_STANDARD		FIELD_PREP_CONST(AN8855_PHY_PAGE, 0x0)
 +#define   AN8855_PHY_PAGE_EXTENDED_1		FIELD_PREP_CONST(AN8855_PHY_PAGE, 0x1)
@@ -3670,31 +3849,14 @@ index 00000000000000..10627ea2be3873
 +	struct device *dev = &phydev->mdio.dev;
 +	struct device_node *node = dev->of_node;
 +	struct air_an8855_priv *priv;
-+	int ret;
 +
-+	/* If we don't have a node, skip get calib */
++	/* If we don't have a node, skip calib */
 +	if (!node)
 +		return 0;
 +
 +	priv = devm_kzalloc(dev, sizeof(*priv), GFP_KERNEL);
 +	if (!priv)
 +		return -ENOMEM;
-+
-+	ret = en8855_get_r50ohm_val(dev, "tx_a", &priv->calibration_data[0]);
-+	if (ret)
-+		return ret;
-+
-+	ret = en8855_get_r50ohm_val(dev, "tx_b", &priv->calibration_data[1]);
-+	if (ret)
-+		return ret;
-+
-+	ret = en8855_get_r50ohm_val(dev, "tx_c", &priv->calibration_data[2]);
-+	if (ret)
-+		return ret;
-+
-+	ret = en8855_get_r50ohm_val(dev, "tx_d", &priv->calibration_data[3]);
-+	if (ret)
-+		return ret;
 +
 +	phydev->priv = priv;
 +
@@ -3727,6 +3889,7 @@ index 00000000000000..10627ea2be3873
 +static int an8855_config_init(struct phy_device *phydev)
 +{
 +	struct air_an8855_priv *priv = phydev->priv;
++	struct device *dev = &phydev->mdio.dev;
 +	int ret;
 +
 +	/* Enable HW auto downshift */
@@ -3739,6 +3902,22 @@ index 00000000000000..10627ea2be3873
 +	 */
 +	if (priv && phydev->dev_flags & AN8855_PHY_FLAGS_EN_CALIBRATION) {
 +		u8 *calibration_data = priv->calibration_data;
++
++		ret = en8855_get_r50ohm_val(dev, "tx_a", &calibration_data[0]);
++		if (ret)
++			return ret;
++
++		ret = en8855_get_r50ohm_val(dev, "tx_b", &calibration_data[1]);
++		if (ret)
++			return ret;
++
++		ret = en8855_get_r50ohm_val(dev, "tx_c", &calibration_data[2]);
++		if (ret)
++			return ret;
++
++		ret = en8855_get_r50ohm_val(dev, "tx_d", &calibration_data[3]);
++		if (ret)
++			return ret;
 +
 +		ret = phy_modify_mmd(phydev, MDIO_MMD_VEND1, AN8855_PHY_R500HM_RSEL_TX_AB,
 +				     AN8855_PHY_R50OHM_RSEL_TX_A | AN8855_PHY_R50OHM_RSEL_TX_B,
@@ -3838,8 +4017,124 @@ index 00000000000000..10627ea2be3873
 +MODULE_DESCRIPTION("Airoha AN8855 PHY driver");
 +MODULE_AUTHOR("Christian Marangi <ansuelsmth@gmail.com>");
 +MODULE_LICENSE("GPL");
+diff --git a/target/linux/mediatek/files-6.6/drivers/nvmem/an8855-efuse.c b/target/linux/mediatek/files-6.6/drivers/nvmem/an8855-efuse.c
+new file mode 100644
+index 00000000000000..7940453d6e58e3
+--- /dev/null
++++ b/target/linux/mediatek/files-6.6/drivers/nvmem/an8855-efuse.c
+@@ -0,0 +1,63 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ *  Airoha AN8855 Switch EFUSE Driver
++ */
++
++#include <linux/mod_devicetable.h>
++#include <linux/module.h>
++#include <linux/nvmem-provider.h>
++#include <linux/platform_device.h>
++#include <linux/regmap.h>
++
++#define AN8855_EFUSE_CELL		50
++
++#define AN8855_EFUSE_DATA0		0x1000a500
++#define   AN8855_EFUSE_R50O		GENMASK(30, 24)
++
++static int an8855_efuse_read(void *context, unsigned int offset,
++			     void *val, size_t bytes)
++{
++	struct regmap *regmap = context;
++
++	return regmap_bulk_read(regmap, AN8855_EFUSE_DATA0 + offset,
++				val, bytes / sizeof(u32));
++}
++
++static int an8855_efuse_probe(struct platform_device *pdev)
++{
++	struct nvmem_config an8855_nvmem_config = {
++		.name = "an8855-efuse",
++		.size = AN8855_EFUSE_CELL * sizeof(u32),
++		.stride = sizeof(u32),
++		.word_size = sizeof(u32),
++		.reg_read = an8855_efuse_read,
++	};
++	struct device *dev = &pdev->dev;
++	struct nvmem_device *nvmem;
++
++	/* Assign NVMEM priv to MFD regmap */
++	an8855_nvmem_config.priv = dev_get_regmap(dev->parent, NULL);
++	an8855_nvmem_config.dev = dev;
++	nvmem = devm_nvmem_register(dev, &an8855_nvmem_config);
++
++	return PTR_ERR_OR_ZERO(nvmem);
++}
++
++static const struct of_device_id an8855_efuse_of_match[] = {
++	{ .compatible = "airoha,an8855-efuse", },
++	{ /* sentinel */ }
++};
++MODULE_DEVICE_TABLE(of, an8855_efuse_of_match);
++
++static struct platform_driver an8855_efuse_driver = {
++	.probe = an8855_efuse_probe,
++	.driver = {
++		.name = "an8855-efuse",
++		.of_match_table = an8855_efuse_of_match,
++	},
++};
++module_platform_driver(an8855_efuse_driver);
++
++MODULE_AUTHOR("Christian Marangi <ansuelsmth@gmail.com>");
++MODULE_DESCRIPTION("Driver for AN8855 Switch EFUSE");
++MODULE_LICENSE("GPL");
+diff --git a/target/linux/mediatek/files-6.6/include/linux/mfd/airoha-an8855-mfd.h b/target/linux/mediatek/files-6.6/include/linux/mfd/airoha-an8855-mfd.h
+new file mode 100644
+index 00000000000000..56061566a0796f
+--- /dev/null
++++ b/target/linux/mediatek/files-6.6/include/linux/mfd/airoha-an8855-mfd.h
+@@ -0,0 +1,41 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++/*
++ * MFD driver for Airoha AN8855 Switch
++ */
++#ifndef _LINUX_INCLUDE_MFD_AIROHA_AN8855_MFD_H
++#define _LINUX_INCLUDE_MFD_AIROHA_AN8855_MFD_H
++
++#include <linux/bitfield.h>
++
++/* MII Registers */
++#define AN8855_PHY_SELECT_PAGE		0x1f
++#define   AN8855_PHY_PAGE		GENMASK(2, 0)
++#define   AN8855_PHY_PAGE_STANDARD	FIELD_PREP_CONST(AN8855_PHY_PAGE, 0x0)
++#define   AN8855_PHY_PAGE_EXTENDED_1	FIELD_PREP_CONST(AN8855_PHY_PAGE, 0x1)
++#define   AN8855_PHY_PAGE_EXTENDED_4	FIELD_PREP_CONST(AN8855_PHY_PAGE, 0x4)
++
++/* MII Registers Page 4 */
++#define AN8855_PBUS_MODE		0x10
++#define   AN8855_PBUS_MODE_ADDR_FIXED	0x0
++#define AN8855_PBUS_MODE_ADDR_INCR	BIT(15)
++#define AN8855_PBUS_WR_ADDR_HIGH	0x11
++#define AN8855_PBUS_WR_ADDR_LOW		0x12
++#define AN8855_PBUS_WR_DATA_HIGH	0x13
++#define AN8855_PBUS_WR_DATA_LOW		0x14
++#define AN8855_PBUS_RD_ADDR_HIGH	0x15
++#define AN8855_PBUS_RD_ADDR_LOW		0x16
++#define AN8855_PBUS_RD_DATA_HIGH	0x17
++#define AN8855_PBUS_RD_DATA_LOW		0x18
++
++struct an8855_mfd_priv {
++	struct device *dev;
++	struct mii_bus *bus;
++
++	unsigned int switch_addr;
++	u16 current_page;
++};
++
++int an8855_mii_set_page(struct an8855_mfd_priv *priv, u8 phy_id,
++			u8 page);
++
++#endif
 diff --git a/target/linux/mediatek/filogic/config-6.6 b/target/linux/mediatek/filogic/config-6.6
-index 85e7367f41cfe5..aa2d74be4b4364 100644
+index e0a715a56b187d..fe85b9d3f14130 100644
 --- a/target/linux/mediatek/filogic/config-6.6
 +++ b/target/linux/mediatek/filogic/config-6.6
 @@ -1,5 +1,6 @@
@@ -3849,7 +4144,22 @@ index 85e7367f41cfe5..aa2d74be4b4364 100644
  CONFIG_AIROHA_EN8801SC_PHY=y
  CONFIG_ARCH_BINFMT_ELF_EXTRA_PHDRS=y
  CONFIG_ARCH_CORRECT_STACKTRACE_ON_KRETPROBE=y
-@@ -291,6 +292,7 @@ CONFIG_NEED_DMA_MAP_STATE=y
+@@ -237,12 +238,14 @@ CONFIG_MAXLINEAR_GPHY=y
+ CONFIG_MDIO_BUS=y
+ CONFIG_MDIO_DEVICE=y
+ CONFIG_MDIO_DEVRES=y
++CONFIG_MDIO_AN8855=y
+ CONFIG_MEDIATEK_2P5GE_PHY=y
+ CONFIG_MEDIATEK_GE_PHY=y
+ CONFIG_MEDIATEK_GE_SOC_PHY=y
+ CONFIG_MEDIATEK_WATCHDOG=y
+ CONFIG_MESSAGE_LOGLEVEL_DEFAULT=7
+ CONFIG_MFD_SYSCON=y
++CONFIG_MFD_AIROHA_AN8855=y
+ CONFIG_MIGRATION=y
+ # CONFIG_MITIGATE_SPECTRE_BRANCH_HISTORY is not set
+ CONFIG_MMC=y
+@@ -292,6 +295,7 @@ CONFIG_NEED_DMA_MAP_STATE=y
  CONFIG_NEED_SG_DMA_LENGTH=y
  CONFIG_NET_DEVLINK=y
  CONFIG_NET_DSA=y
@@ -3857,8 +4167,16 @@ index 85e7367f41cfe5..aa2d74be4b4364 100644
  CONFIG_NET_DSA_MT7530=y
  CONFIG_NET_DSA_MT7530_MDIO=y
  CONFIG_NET_DSA_MT7530_MMIO=y
+@@ -310,6 +314,7 @@ CONFIG_NO_HZ_COMMON=y
+ CONFIG_NO_HZ_IDLE=y
+ CONFIG_NR_CPUS=4
+ CONFIG_NVMEM=y
++CONFIG_NVMEM_AN8855_EFUSE=y
+ CONFIG_NVMEM_BLOCK=y
+ CONFIG_NVMEM_LAYOUTS=y
+ CONFIG_NVMEM_LAYOUT_ADTRAN=y
 diff --git a/target/linux/mediatek/mt7622/config-6.6 b/target/linux/mediatek/mt7622/config-6.6
-index ec3be8df9aa574..b18fc848a27fa3 100644
+index ec3be8df9aa574..c3c8b60684dceb 100644
 --- a/target/linux/mediatek/mt7622/config-6.6
 +++ b/target/linux/mediatek/mt7622/config-6.6
 @@ -1,5 +1,6 @@
@@ -3868,7 +4186,22 @@ index ec3be8df9aa574..b18fc848a27fa3 100644
  # CONFIG_AIROHA_EN8801SC_PHY is not set
  CONFIG_AQUANTIA_PHY=y
  CONFIG_ARCH_BINFMT_ELF_EXTRA_PHDRS=y
-@@ -294,6 +295,7 @@ CONFIG_NEED_DMA_MAP_STATE=y
+@@ -240,12 +241,14 @@ CONFIG_MAXLINEAR_GPHY=y
+ CONFIG_MDIO_BUS=y
+ CONFIG_MDIO_DEVICE=y
+ CONFIG_MDIO_DEVRES=y
++# CONFIG_MDIO_AN8855 is not set
+ # CONFIG_MEDIATEK_2P5GE_PHY is not set
+ CONFIG_MEDIATEK_GE_PHY=y
+ # CONFIG_MEDIATEK_GE_SOC_PHY is not set
+ CONFIG_MEDIATEK_WATCHDOG=y
+ CONFIG_MESSAGE_LOGLEVEL_DEFAULT=7
+ CONFIG_MFD_SYSCON=y
++# CONFIG_MFD_AIROHA_AN8855 is not set
+ CONFIG_MIGRATION=y
+ # CONFIG_MITIGATE_SPECTRE_BRANCH_HISTORY is not set
+ CONFIG_MMC=y
+@@ -294,6 +297,7 @@ CONFIG_NEED_DMA_MAP_STATE=y
  CONFIG_NEED_SG_DMA_LENGTH=y
  CONFIG_NET_DEVLINK=y
  CONFIG_NET_DSA=y
@@ -3876,8 +4209,16 @@ index ec3be8df9aa574..b18fc848a27fa3 100644
  CONFIG_NET_DSA_MT7530=y
  CONFIG_NET_DSA_MT7530_MDIO=y
  # CONFIG_NET_DSA_MT7530_MMIO is not set
+@@ -312,6 +316,7 @@ CONFIG_NO_HZ_COMMON=y
+ CONFIG_NO_HZ_IDLE=y
+ CONFIG_NR_CPUS=2
+ CONFIG_NVMEM=y
++# CONFIG_NVMEM_AN8855_EFUSE is not set
+ CONFIG_NVMEM_BLOCK=y
+ CONFIG_NVMEM_LAYOUTS=y
+ CONFIG_NVMEM_LAYOUT_ADTRAN=y
 diff --git a/target/linux/mediatek/mt7623/config-6.6 b/target/linux/mediatek/mt7623/config-6.6
-index 6bc92a09dce30e..ce9f817a62a353 100644
+index 6bc92a09dce30e..9d12c48eeeea1e 100644
 --- a/target/linux/mediatek/mt7623/config-6.6
 +++ b/target/linux/mediatek/mt7623/config-6.6
 @@ -1,4 +1,5 @@
@@ -3886,7 +4227,23 @@ index 6bc92a09dce30e..ce9f817a62a353 100644
  # CONFIG_AIROHA_EN8801SC_PHY is not set
  CONFIG_ALIGNMENT_TRAP=y
  CONFIG_ARCH_32BIT_OFF_T=y
-@@ -410,6 +411,7 @@ CONFIG_NEED_SRCU_NMI_SAFE=y
+@@ -352,6 +353,7 @@ CONFIG_MDIO_BITBANG=y
+ CONFIG_MDIO_BUS=y
+ CONFIG_MDIO_DEVICE=y
+ CONFIG_MDIO_DEVRES=y
++# CONFIG_MDIO_AN8855 is not set
+ CONFIG_MDIO_GPIO=y
+ CONFIG_MEDIATEK_GE_PHY=y
+ CONFIG_MEDIATEK_MT6577_AUXADC=y
+@@ -361,6 +363,7 @@ CONFIG_MFD_CORE=y
+ # CONFIG_MFD_HI6421_SPMI is not set
+ CONFIG_MFD_MT6397=y
+ CONFIG_MFD_SYSCON=y
++# CONFIG_MFD_AIROHA_AN8855 is not set
+ CONFIG_MIGHT_HAVE_CACHE_L2X0=y
+ CONFIG_MIGRATION=y
+ CONFIG_MMC=y
+@@ -410,6 +413,7 @@ CONFIG_NEED_SRCU_NMI_SAFE=y
  CONFIG_NEON=y
  CONFIG_NET_DEVLINK=y
  CONFIG_NET_DSA=y
@@ -3894,8 +4251,16 @@ index 6bc92a09dce30e..ce9f817a62a353 100644
  CONFIG_NET_DSA_MT7530=y
  CONFIG_NET_DSA_MT7530_MDIO=y
  # CONFIG_NET_DSA_MT7530_MMIO is not set
+@@ -431,6 +435,7 @@ CONFIG_NO_HZ_COMMON=y
+ CONFIG_NO_HZ_IDLE=y
+ CONFIG_NR_CPUS=4
+ CONFIG_NVMEM=y
++# CONFIG_NVMEM_AN8855_EFUSE is not set
+ CONFIG_NVMEM_LAYOUTS=y
+ # CONFIG_NVMEM_LAYOUT_ADTRAN is not set
+ CONFIG_NVMEM_MTK_EFUSE=y
 diff --git a/target/linux/mediatek/mt7629/config-6.6 b/target/linux/mediatek/mt7629/config-6.6
-index 9f57bda3e9e7a7..21c1862e679a35 100644
+index 9f57bda3e9e7a7..d66a514f63e626 100644
 --- a/target/linux/mediatek/mt7629/config-6.6
 +++ b/target/linux/mediatek/mt7629/config-6.6
 @@ -1,3 +1,4 @@
@@ -3903,7 +4268,19 @@ index 9f57bda3e9e7a7..21c1862e679a35 100644
  # CONFIG_AIROHA_EN8801SC_PHY is not set
  CONFIG_ALIGNMENT_TRAP=y
  CONFIG_ARCH_32BIT_OFF_T=y
-@@ -216,6 +217,7 @@ CONFIG_NETFILTER=y
+@@ -181,9 +182,11 @@ CONFIG_MACH_MT7629=y
+ CONFIG_MDIO_BUS=y
+ CONFIG_MDIO_DEVICE=y
+ CONFIG_MDIO_DEVRES=y
++# CONFIG_MDIO_AN8855 is not set
+ CONFIG_MEDIATEK_GE_PHY=y
+ CONFIG_MEDIATEK_WATCHDOG=y
+ CONFIG_MFD_SYSCON=y
++# CONFIG_MFD_AIROHA_AN8855 is not set
+ CONFIG_MIGHT_HAVE_CACHE_L2X0=y
+ CONFIG_MIGRATION=y
+ CONFIG_MMU_LAZY_TLB_REFCOUNT=y
+@@ -216,6 +219,7 @@ CONFIG_NETFILTER=y
  CONFIG_NETFILTER_BPF_LINK=y
  CONFIG_NET_DEVLINK=y
  CONFIG_NET_DSA=y
@@ -3911,23 +4288,31 @@ index 9f57bda3e9e7a7..21c1862e679a35 100644
  CONFIG_NET_DSA_MT7530=y
  CONFIG_NET_DSA_MT7530_MDIO=y
  # CONFIG_NET_DSA_MT7530_MMIO is not set
+@@ -234,6 +238,7 @@ CONFIG_NO_HZ_COMMON=y
+ CONFIG_NO_HZ_IDLE=y
+ CONFIG_NR_CPUS=2
+ CONFIG_NVMEM=y
++# CONFIG_NVMEM_AN8855_EFUSE is not set
+ CONFIG_NVMEM_LAYOUTS=y
+ # CONFIG_NVMEM_LAYOUT_ADTRAN is not set
+ # CONFIG_NVMEM_MTK_EFUSE is not set
 diff --git a/target/linux/mediatek/patches-6.6/737-net-dsa-add-Airoha-AN8855.patch b/target/linux/mediatek/patches-6.6/737-net-dsa-add-Airoha-AN8855.patch
 new file mode 100644
-index 00000000000000..fcfe61997856cb
+index 00000000000000..bd70bec4b37e13
 --- /dev/null
 +++ b/target/linux/mediatek/patches-6.6/737-net-dsa-add-Airoha-AN8855.patch
-@@ -0,0 +1,197 @@
+@@ -0,0 +1,309 @@
 +From: Christian Marangi <ansuelsmth@gmail.com>
 +To: Christian Marangi <ansuelsmth@gmail.com>,
-+	Andrew Lunn <andrew@lunn.ch>,
-+	Florian Fainelli <f.fainelli@gmail.com>,
-+	Vladimir Oltean <olteanv@gmail.com>,
++	Lee Jones <lee@kernel.org>, Rob Herring <robh@kernel.org>,
++	Krzysztof Kozlowski <krzk+dt@kernel.org>,
++	Conor Dooley <conor+dt@kernel.org>,
++	Andrew Lunn <andrew+netdev@lunn.ch>,
 +	"David S. Miller" <davem@davemloft.net>,
 +	Eric Dumazet <edumazet@google.com>,
 +	Jakub Kicinski <kuba@kernel.org>, Paolo Abeni <pabeni@redhat.com>,
-+	Rob Herring <robh@kernel.org>,
-+	Krzysztof Kozlowski <krzk+dt@kernel.org>,
-+	Conor Dooley <conor+dt@kernel.org>,
++	Vladimir Oltean <olteanv@gmail.com>,
++	Srinivas Kandagatla <srinivas.kandagatla@linaro.org>,
 +	Heiner Kallweit <hkallweit1@gmail.com>,
 +	Russell King <linux@armlinux.org.uk>,
 +	Matthias Brugger <matthias.bgg@gmail.com>,
@@ -3937,9 +4322,9 @@ index 00000000000000..fcfe61997856cb
 +	linux-mediatek@lists.infradead.org, netdev@vger.kernel.org,
 +	devicetree@vger.kernel.org, linux-kernel@vger.kernel.org,
 +	upstream@airoha.com
-+Subject: [net-next PATCH v4 0/3] net: dsa: Add Airoha AN8855 support
-+Date: Fri,  8 Nov 2024 14:24:13 +0100	[thread overview]
-+Message-ID: <20241108132511.18801-1-ansuelsmth@gmail.com> (raw)
++Subject: [net-next PATCH v11 0/9] net: dsa: Add Airoha AN8855 support
++Date: Mon,  9 Dec 2024 14:44:17 +0100	[thread overview]
++Message-ID: <20241209134459.27110-1-ansuelsmth@gmail.com> (raw)
 +
 +This small series add the initial support for the Airoha AN8855 Switch.
 +
@@ -3956,6 +4341,44 @@ index 00000000000000..fcfe61997856cb
 +There is this special thing where PHY needs to be calibrated with values
 +from the switch efuse. (the thing have a whole cpu timer and MCU)
 +
++Changes v11:
++- Address reviews from Christophe (spell mistake + dev_err_probe)
++- Fix kconfig dependency for MFD driver (depends on MDIO_DEVICE instead of MDIO)
++  (indirectly fix link error for mdio APIs)
++- Fix copy-paste error for MFD driver of_table
++- Fix compilation error for PHY (move NVMEM to .config)
++- Drop unneeded NVMEM node from MDIO example schema (from Andrew)
++- Adapt MFD example schema to MDIO reg property restrictions
++Changes v10:
++- Entire rework to MFD + split to MDIO, EFUSE, SWITCH separate drivers
++- Drop EEE OPs (while Russell finish RFC for EEE changes)
++- Use new pcs_inpand OPs
++- Drop AN restart function and move to pcs_config
++- Enable assisted_learning and disable CPU learn (preparation for fdb_isolation)
++- Move EFUSE read in Internal PHY driver to .config to handle EPROBE_DEFER
++  (needed now that NVMEM driver is register externally instead of internally to switch
++   node)
++Changes v9:
++- Error out on using 5G speed as currently not supported
++- Add missing MAC_2500FD in phylink mac_capabilities
++- Add comment and improve if condition for an8855_phylink_mac_config
++Changes v8:
++- Add port Fast Age support
++- Add support for Port Isolation
++- Use correct register for Learning Disable
++- Add support for Ageing Time OP
++- Set default PVID to 0 by default
++- Add mdb OPs
++- Add port change MTU
++- Fix support for Upper VLAN
++Changes v7:
++- Fix devm_dsa_register_switch wrong export symbol
++Changes v6:
++- Drop standard MIB and handle with ethtool OPs (as requested by Jakub)
++- Cosmetic: use bool instead of 0 or 1
++Changes v5:
++- Add devm_dsa_register_switch() patch
++- Add Reviewed-by tag for DT patch
 +Changes v4:
 +- Set regmap readable_table static (mute compilation warning)
 +- Add support for port_bridge flags (LEARNING, FLOOD)
@@ -4001,38 +4424,91 @@ index 00000000000000..fcfe61997856cb
 +- Move aneg validation for 2500-basex in pcs_config
 +- Move r50Ohm table and function to PHY driver
 +
-+Christian Marangi (3):
-+  dt-bindings: net: dsa: Add Airoha AN8855 Gigabit Switch documentation
++Christian Marangi (9):
++  dt-bindings: nvmem: Document support for Airoha AN8855 Switch EFUSE
++  dt-bindings: net: Document support for Airoha AN8855 Switch Virtual
++    MDIO
++  dt-bindings: net: dsa: Document support for Airoha AN8855 DSA Switch
++  dt-bindings: mfd: Document support for Airoha AN8855 Switch SoC
++  mfd: an8855: Add support for Airoha AN8855 Switch MFD
++  net: mdio: Add Airoha AN8855 Switch MDIO Passtrough
++  nvmem: an8855: Add support for Airoha AN8855 Switch EFUSE
 +  net: dsa: Add Airoha AN8855 5-Port Gigabit DSA Switch driver
 +  net: phy: Add Airoha AN8855 Internal Switch Gigabit PHY
 +
-+ .../bindings/net/dsa/airoha,an8855.yaml       |  242 ++
-+ MAINTAINERS                                   |   11 +
++ .../bindings/mfd/airoha,an8855-mfd.yaml       |  178 ++
++ .../bindings/net/airoha,an8855-mdio.yaml      |   56 +
++ .../net/dsa/airoha,an8855-switch.yaml         |  105 +
++ .../bindings/nvmem/airoha,an8855-efuse.yaml   |  123 +
++ MAINTAINERS                                   |   17 +
++ drivers/mfd/Kconfig                           |   10 +
++ drivers/mfd/Makefile                          |    1 +
++ drivers/mfd/airoha-an8855.c                   |  278 ++
 + drivers/net/dsa/Kconfig                       |    9 +
 + drivers/net/dsa/Makefile                      |    1 +
-+ drivers/net/dsa/an8855.c                      | 2138 +++++++++++++++++
-+ drivers/net/dsa/an8855.h                      |  638 +++++
++ drivers/net/dsa/an8855.c                      | 2310 +++++++++++++++++
++ drivers/net/dsa/an8855.h                      |  783 ++++++
++ drivers/net/mdio/Kconfig                      |    9 +
++ drivers/net/mdio/Makefile                     |    1 +
++ drivers/net/mdio/mdio-an8855.c                |  113 +
 + drivers/net/phy/Kconfig                       |    5 +
 + drivers/net/phy/Makefile                      |    1 +
-+ drivers/net/phy/air_an8855.c                  |  268 +++
-+ 9 files changed, 3313 insertions(+)
-+ create mode 100644 Documentation/devicetree/bindings/net/dsa/airoha,an8855.yaml
++ drivers/net/phy/air_an8855.c                  |  267 ++
++ drivers/nvmem/Kconfig                         |   11 +
++ drivers/nvmem/Makefile                        |    2 +
++ drivers/nvmem/an8855-efuse.c                  |   63 +
++ include/linux/mfd/airoha-an8855-mfd.h         |   41 +
++ 22 files changed, 4384 insertions(+)
++ create mode 100644 Documentation/devicetree/bindings/mfd/airoha,an8855-mfd.yaml
++ create mode 100644 Documentation/devicetree/bindings/net/airoha,an8855-mdio.yaml
++ create mode 100644 Documentation/devicetree/bindings/net/dsa/airoha,an8855-switch.yaml
++ create mode 100644 Documentation/devicetree/bindings/nvmem/airoha,an8855-efuse.yaml
++ create mode 100644 drivers/mfd/airoha-an8855.c
 + create mode 100644 drivers/net/dsa/an8855.c
 + create mode 100644 drivers/net/dsa/an8855.h
++ create mode 100644 drivers/net/mdio/mdio-an8855.c
 + create mode 100644 drivers/net/phy/air_an8855.c
++ create mode 100644 drivers/nvmem/an8855-efuse.c
++ create mode 100644 include/linux/mfd/airoha-an8855-mfd.h
 +
-+-- 
-+2.45.2
-+
++--- a/drivers/mfd/Kconfig
+++++ b/drivers/mfd/Kconfig
++@@ -41,6 +41,16 @@ config MFD_ALTERA_SYSMGR
++ 	  using regmap_mmio accesses for ARM32 parts and SMC calls to
++ 	  EL3 for ARM64 parts.
++ 
+++config MFD_AIROHA_AN8855
+++	tristate "Airoha AN8855 Switch MFD"
+++	select MFD_CORE
+++	select MDIO_DEVICE
+++	depends on NETDEVICES && OF
+++	help
+++	  Support for the Airoha AN8855 Switch MFD. This is a SoC Switch
+++	  that provides various peripherals. Currently it provides a
+++	  DSA switch and a NVMEM provider.
+++
++ config MFD_ACT8945A
++ 	tristate "Active-semi ACT8945A"
++ 	select MFD_CORE
++--- a/drivers/mfd/Makefile
+++++ b/drivers/mfd/Makefile
++@@ -7,6 +7,7 @@
++ obj-$(CONFIG_MFD_88PM860X)	+= 88pm860x.o
++ obj-$(CONFIG_MFD_88PM800)	+= 88pm800.o 88pm80x.o
++ obj-$(CONFIG_MFD_88PM805)	+= 88pm805.o 88pm80x.o
+++obj-$(CONFIG_MFD_AIROHA_AN8855)	+= airoha-an8855.o
++ obj-$(CONFIG_MFD_ACT8945A)	+= act8945a.o
++ obj-$(CONFIG_MFD_SM501)		+= sm501.o
++ obj-$(CONFIG_ARCH_BCM2835)	+= bcm2835-pm.o
 +--- a/drivers/net/dsa/Kconfig
 ++++ b/drivers/net/dsa/Kconfig
 +@@ -24,6 +24,15 @@ config NET_DSA_LOOP
 + 	  This enables support for a fake mock-up switch chip which
 + 	  exercises the DSA APIs.
 + 
-++
 ++config NET_DSA_AN8855
 ++	tristate "Airoha AN8855 Ethernet switch support"
+++	depends on MFD_AIROHA_AN8855
 ++	depends on NET_DSA
 ++	select NET_DSA_TAG_MTK
 ++	help
@@ -4052,6 +4528,34 @@ index 00000000000000..fcfe61997856cb
 + obj-$(CONFIG_NET_DSA_LANTIQ_GSWIP) += lantiq_gswip.o
 + obj-$(CONFIG_NET_DSA_MT7530)	+= mt7530.o
 + obj-$(CONFIG_NET_DSA_MT7530_MDIO) += mt7530-mdio.o
++--- a/drivers/net/mdio/Kconfig
+++++ b/drivers/net/mdio/Kconfig
++@@ -61,6 +61,15 @@ config MDIO_XGENE
++ 	  This module provides a driver for the MDIO busses found in the
++ 	  APM X-Gene SoC's.
++ 
+++config MDIO_AN8855
+++	tristate "Airoha AN8855 Switch MDIO bus controller"
+++	depends on MFD_AIROHA_AN8855
+++	depends on OF_MDIO
+++	help
+++	  This module provides a driver for the Airoha AN8855 Switch
+++	  that requires a MDIO passtrough as switch address is shared
+++	  with the internal PHYs and requires additional page handling.
+++
++ config MDIO_ASPEED
++ 	tristate "ASPEED MDIO bus controller"
++ 	depends on ARCH_ASPEED || COMPILE_TEST
++--- a/drivers/net/mdio/Makefile
+++++ b/drivers/net/mdio/Makefile
++@@ -5,6 +5,7 @@ obj-$(CONFIG_ACPI_MDIO)		+= acpi_mdio.o
++ obj-$(CONFIG_FWNODE_MDIO)	+= fwnode_mdio.o
++ obj-$(CONFIG_OF_MDIO)		+= of_mdio.o
++ 
+++obj-$(CONFIG_MDIO_AN8855)		+= mdio-an8855.o
++ obj-$(CONFIG_MDIO_ASPEED)		+= mdio-aspeed.o
++ obj-$(CONFIG_MDIO_BCM_IPROC)		+= mdio-bcm-iproc.o
++ obj-$(CONFIG_MDIO_BCM_UNIMAC)		+= mdio-bcm-unimac.o
 +--- a/drivers/net/phy/Kconfig
 ++++ b/drivers/net/phy/Kconfig
 +@@ -147,6 +147,11 @@ config AIROHA_EN8801SC_PHY
@@ -4076,41 +4580,1445 @@ index 00000000000000..fcfe61997856cb
 + obj-$(CONFIG_AIR_EN8811H_PHY)   += air_en8811h.o
 + obj-$(CONFIG_AMD_PHY)		+= amd.o
 + obj-$(CONFIG_AQUANTIA_PHY)	+= aquantia/
-+--- a/include/net/dsa.h
-++++ b/include/net/dsa.h
-+@@ -1356,6 +1356,7 @@ static inline void dsa_tag_generic_flow_
++--- a/drivers/nvmem/Kconfig
+++++ b/drivers/nvmem/Kconfig
++@@ -29,6 +29,17 @@ source "drivers/nvmem/layouts/Kconfig"
 + 
-+ void dsa_unregister_switch(struct dsa_switch *ds);
-+ int dsa_register_switch(struct dsa_switch *ds);
-++int devm_dsa_register_switch(struct device *dev, struct dsa_switch *ds);
-+ void dsa_switch_shutdown(struct dsa_switch *ds);
-+ struct dsa_switch *dsa_switch_find(int tree_index, int sw_index);
-+ void dsa_flush_workqueue(void);
-+--- a/net/dsa/dsa.c
-++++ b/net/dsa/dsa.c
-+@@ -1560,6 +1560,25 @@ int dsa_register_switch(struct dsa_switc
-+ }
-+ EXPORT_SYMBOL_GPL(dsa_register_switch);
++ # Devices
 + 
-++static void devm_dsa_unregister_switch(void *data)
-++{
-++	struct dsa_switch *ds = data;
+++config NVMEM_AN8855_EFUSE
+++	tristate "Airoha AN8855 eFuse support"
+++	depends on MFD_AIROHA_AN8855 || COMPILE_TEST
+++	help
+++	  Say y here to enable support for reading eFuses on Airoha AN8855
+++	  Switch. These are e.g. used to store factory programmed
+++	  calibration data required for the PHY.
 ++
-++	dsa_unregister_switch(ds);
+++	  This driver can also be built as a module. If so, the module will
+++	  be called nvmem-an8855-efuse.
+++
++ config NVMEM_APPLE_EFUSES
++ 	tristate "Apple eFuse support"
++ 	depends on ARCH_APPLE || COMPILE_TEST
++--- a/drivers/nvmem/Makefile
+++++ b/drivers/nvmem/Makefile
++@@ -10,6 +10,8 @@ nvmem_layouts-y			:= layouts.o
++ obj-y				+= layouts/
++ 
++ # Devices
+++obj-$(CONFIG_NVMEM_AN8855_EFUSE)	+= nvmem-an8855-efuse.o
+++nvmem-an8855-efuse-y 			:= an8855-efuse.o
++ obj-$(CONFIG_NVMEM_APPLE_EFUSES)	+= nvmem-apple-efuses.o
++ nvmem-apple-efuses-y 			:= apple-efuses.o
++ obj-$(CONFIG_NVMEM_BCM_OCOTP)		+= nvmem-bcm-ocotp.o
+diff --git a/target/linux/mediatek/patches-6.6/738-net-phylink-move-phylink_pcs_neg_mode.patch b/target/linux/mediatek/patches-6.6/738-net-phylink-move-phylink_pcs_neg_mode.patch
+new file mode 100644
+index 00000000000000..2860b785faf869
+--- /dev/null
++++ b/target/linux/mediatek/patches-6.6/738-net-phylink-move-phylink_pcs_neg_mode.patch
+@@ -0,0 +1,166 @@
++From 5e5401d6612ef599ad45785b941eebda7effc90f Mon Sep 17 00:00:00 2001
++From: "Russell King (Oracle)" <rmk+kernel@armlinux.org.uk>
++Date: Thu, 4 Jan 2024 09:47:36 +0000
++Subject: [PATCH] net: phylink: move phylink_pcs_neg_mode() into phylink.c
++
++Move phylink_pcs_neg_mode() from the header file into the .c file since
++nothing should be using it.
++
++Signed-off-by: Russell King (Oracle) <rmk+kernel@armlinux.org.uk>
++Reviewed-by: Andrew Lunn <andrew@lunn.ch>
++Signed-off-by: David S. Miller <davem@davemloft.net>
++---
++ drivers/net/phy/phylink.c | 66 +++++++++++++++++++++++++++++++++++++++
++ include/linux/phylink.h   | 66 ---------------------------------------
++ 2 files changed, 66 insertions(+), 66 deletions(-)
++
++--- a/drivers/net/phy/phylink.c
+++++ b/drivers/net/phy/phylink.c
++@@ -1150,6 +1150,72 @@ static void phylink_pcs_an_restart(struc
++ 		pl->pcs->ops->pcs_an_restart(pl->pcs);
++ }
++ 
+++/**
+++ * phylink_pcs_neg_mode() - helper to determine PCS inband mode
+++ * @mode: one of %MLO_AN_FIXED, %MLO_AN_PHY, %MLO_AN_INBAND.
+++ * @interface: interface mode to be used
+++ * @advertising: adertisement ethtool link mode mask
+++ *
+++ * Determines the negotiation mode to be used by the PCS, and returns
+++ * one of:
+++ *
+++ * - %PHYLINK_PCS_NEG_NONE: interface mode does not support inband
+++ * - %PHYLINK_PCS_NEG_OUTBAND: an out of band mode (e.g. reading the PHY)
+++ *   will be used.
+++ * - %PHYLINK_PCS_NEG_INBAND_DISABLED: inband mode selected but autoneg
+++ *   disabled
+++ * - %PHYLINK_PCS_NEG_INBAND_ENABLED: inband mode selected and autoneg enabled
+++ *
+++ * Note: this is for cases where the PCS itself is involved in negotiation
+++ * (e.g. Clause 37, SGMII and similar) not Clause 73.
+++ */
+++static unsigned int phylink_pcs_neg_mode(unsigned int mode,
+++					 phy_interface_t interface,
+++					 const unsigned long *advertising)
+++{
+++	unsigned int neg_mode;
+++
+++	switch (interface) {
+++	case PHY_INTERFACE_MODE_SGMII:
+++	case PHY_INTERFACE_MODE_QSGMII:
+++	case PHY_INTERFACE_MODE_QUSGMII:
+++	case PHY_INTERFACE_MODE_USXGMII:
+++		/* These protocols are designed for use with a PHY which
+++		 * communicates its negotiation result back to the MAC via
+++		 * inband communication. Note: there exist PHYs that run
+++		 * with SGMII but do not send the inband data.
+++		 */
+++		if (!phylink_autoneg_inband(mode))
+++			neg_mode = PHYLINK_PCS_NEG_OUTBAND;
+++		else
+++			neg_mode = PHYLINK_PCS_NEG_INBAND_ENABLED;
+++		break;
+++
+++	case PHY_INTERFACE_MODE_1000BASEX:
+++	case PHY_INTERFACE_MODE_2500BASEX:
+++		/* 1000base-X is designed for use media-side for Fibre
+++		 * connections, and thus the Autoneg bit needs to be
+++		 * taken into account. We also do this for 2500base-X
+++		 * as well, but drivers may not support this, so may
+++		 * need to override this.
+++		 */
+++		if (!phylink_autoneg_inband(mode))
+++			neg_mode = PHYLINK_PCS_NEG_OUTBAND;
+++		else if (linkmode_test_bit(ETHTOOL_LINK_MODE_Autoneg_BIT,
+++					   advertising))
+++			neg_mode = PHYLINK_PCS_NEG_INBAND_ENABLED;
+++		else
+++			neg_mode = PHYLINK_PCS_NEG_INBAND_DISABLED;
+++		break;
+++
+++	default:
+++		neg_mode = PHYLINK_PCS_NEG_NONE;
+++		break;
+++	}
+++
+++	return neg_mode;
 ++}
 ++
-++int devm_dsa_register_switch(struct device *dev, struct dsa_switch *ds)
++ static void phylink_major_config(struct phylink *pl, bool restart,
++ 				  const struct phylink_link_state *state)
++ {
++--- a/include/linux/phylink.h
+++++ b/include/linux/phylink.h
++@@ -99,72 +99,6 @@ static inline bool phylink_autoneg_inban
++ }
++ 
++ /**
++- * phylink_pcs_neg_mode() - helper to determine PCS inband mode
++- * @mode: one of %MLO_AN_FIXED, %MLO_AN_PHY, %MLO_AN_INBAND.
++- * @interface: interface mode to be used
++- * @advertising: adertisement ethtool link mode mask
++- *
++- * Determines the negotiation mode to be used by the PCS, and returns
++- * one of:
++- *
++- * - %PHYLINK_PCS_NEG_NONE: interface mode does not support inband
++- * - %PHYLINK_PCS_NEG_OUTBAND: an out of band mode (e.g. reading the PHY)
++- *   will be used.
++- * - %PHYLINK_PCS_NEG_INBAND_DISABLED: inband mode selected but autoneg
++- *   disabled
++- * - %PHYLINK_PCS_NEG_INBAND_ENABLED: inband mode selected and autoneg enabled
++- *
++- * Note: this is for cases where the PCS itself is involved in negotiation
++- * (e.g. Clause 37, SGMII and similar) not Clause 73.
++- */
++-static inline unsigned int phylink_pcs_neg_mode(unsigned int mode,
++-						phy_interface_t interface,
++-						const unsigned long *advertising)
++-{
++-	unsigned int neg_mode;
++-
++-	switch (interface) {
++-	case PHY_INTERFACE_MODE_SGMII:
++-	case PHY_INTERFACE_MODE_QSGMII:
++-	case PHY_INTERFACE_MODE_QUSGMII:
++-	case PHY_INTERFACE_MODE_USXGMII:
++-		/* These protocols are designed for use with a PHY which
++-		 * communicates its negotiation result back to the MAC via
++-		 * inband communication. Note: there exist PHYs that run
++-		 * with SGMII but do not send the inband data.
++-		 */
++-		if (!phylink_autoneg_inband(mode))
++-			neg_mode = PHYLINK_PCS_NEG_OUTBAND;
++-		else
++-			neg_mode = PHYLINK_PCS_NEG_INBAND_ENABLED;
++-		break;
++-
++-	case PHY_INTERFACE_MODE_1000BASEX:
++-	case PHY_INTERFACE_MODE_2500BASEX:
++-		/* 1000base-X is designed for use media-side for Fibre
++-		 * connections, and thus the Autoneg bit needs to be
++-		 * taken into account. We also do this for 2500base-X
++-		 * as well, but drivers may not support this, so may
++-		 * need to override this.
++-		 */
++-		if (!phylink_autoneg_inband(mode))
++-			neg_mode = PHYLINK_PCS_NEG_OUTBAND;
++-		else if (linkmode_test_bit(ETHTOOL_LINK_MODE_Autoneg_BIT,
++-					   advertising))
++-			neg_mode = PHYLINK_PCS_NEG_INBAND_ENABLED;
++-		else
++-			neg_mode = PHYLINK_PCS_NEG_INBAND_DISABLED;
++-		break;
++-
++-	default:
++-		neg_mode = PHYLINK_PCS_NEG_NONE;
++-		break;
++-	}
++-
++-	return neg_mode;
++-}
++-
++-/**
++  * struct phylink_link_state - link state structure
++  * @advertising: ethtool bitmask containing advertised link modes
++  * @lp_advertising: ethtool bitmask containing link partner advertised link
+diff --git a/target/linux/mediatek/patches-6.6/739-net-add-negotiation-of-in-band-capabilities.patch b/target/linux/mediatek/patches-6.6/739-net-add-negotiation-of-in-band-capabilities.patch
+new file mode 100644
+index 00000000000000..44a6aad7f535f5
+--- /dev/null
++++ b/target/linux/mediatek/patches-6.6/739-net-add-negotiation-of-in-band-capabilities.patch
+@@ -0,0 +1,1233 @@
++From: "Russell King (Oracle)" <linux@armlinux.org.uk>
++To: Andrew Lunn <andrew@lunn.ch>, Heiner Kallweit <hkallweit1@gmail.com>
++Cc: Alexander Couzens <lynxis@fe80.eu>,
++	Andrew Lunn <andrew+netdev@lunn.ch>,
++	AngeloGioacchino Del Regno
++	<angelogioacchino.delregno@collabora.com>,
++	Broadcom internal kernel review list
++	<bcm-kernel-feedback-list@broadcom.com>,
++	Daniel Golle <daniel@makrotopia.org>,
++	"David S. Miller" <davem@davemloft.net>,
++	Eric Dumazet <edumazet@google.com>,
++	Florian Fainelli <florian.fainelli@broadcom.com>,
++	Ioana Ciornei <ioana.ciornei@nxp.com>,
++	Jakub Kicinski <kuba@kernel.org>,
++	Jose Abreu <Jose.Abreu@synopsys.com>,
++	linux-arm-kernel@lists.infradead.org,
++	linux-mediatek@lists.infradead.org,
++	Marcin Wojtas <marcin.s.wojtas@gmail.com>,
++	Matthias Brugger <matthias.bgg@gmail.com>,
++	netdev@vger.kernel.org, Paolo Abeni <pabeni@redhat.com>
++Subject: [PATCH RFC net-next 00/16] net: add negotiation of in-band capabilities
++Date: Tue, 26 Nov 2024 09:23:48 +0000	[thread overview]
++Message-ID: <Z0WTpE8wkpjMiv_J@shell.armlinux.org.uk> (raw)
++
++Hi,
++
++Yes, this is one patch over the limit of 15 for netdev - but I think it's
++important to include the last patch to head off review comments like "why
++don't you remove phylink_phy_no_inband() in this series?"
++
++Phylink's handling of in-band has been deficient for a long time, and
++people keep hitting problems with it. Notably, situations with the way-
++to-late standardized 2500Base-X and whether that should or should not
++have in-band enabled. We have also been carrying a hack in the form of
++phylink_phy_no_inband() for a PHY that has been used on a SFP module,
++but has no in-band capabilities, not even for SGMII.
++
++When phylink is trying to operate in in-band mode, this series will look
++at the capabilities of the MAC-side PCS and PHY, and work out whether
++in-band can or should be used, programming the PHY as appropriate. This
++includes in-band bypass mode at the PHY.
++
++We don't... yet... support that on the MAC side PCS, because that
++requires yet more complexity.
++
++Patch 1 passes struct phylink and struct phylink_pcs into
++phylink_pcs_neg_mode() so we can look at more state in this function in
++a future patch.
++
++Patch 2 splits "cur_link_an_mode" (the MLO_AN_* mode) into two separate
++purposes - a requested and an active mode. The active mode is the one
++we will be using for the MAC, which becomes dependent on the result of
++in-band negotiation.
++
++Patch 3 adds debug to phylink_major_config() so we can see what is going
++on with the requested and active AN modes.
++
++Patch 4 adds to phylib a method to get the in-band capabilities of the
++PHY from phylib. Patches 5 and 6 add implementations for BCM84881 and
++some Marvell PHYs found on SFPs.
++
++Patch 7 adds to phylib a method to configure the PHY in-band signalling,
++and patch 8 implements it for those Marvell PHYs that support the method
++in patch 4.
++
++Patch 9 does the same as patch 4 but for the MAC-side PCS, with patches
++10 through 14 adding support to several PCS.
++
++Patch 15 adds the code to phylink_pcs_neg_mode() which looks at the
++capabilities, and works out whether to use in-band or out-band mode for
++driving the link between the MAC PCS and PHY.
++
++Patch 16 removes the phylink_phy_no_inband() hack now that we are
++publishing the in-band capabilities from the BCM84881 PHY driver.
++
++ drivers/net/ethernet/marvell/mvneta.c           |  27 +-
++ drivers/net/ethernet/marvell/mvpp2/mvpp2_main.c |  25 +-
++ drivers/net/pcs/pcs-lynx.c                      |  22 ++
++ drivers/net/pcs/pcs-mtk-lynxi.c                 |  16 ++
++ drivers/net/pcs/pcs-xpcs.c                      |  28 ++
++ drivers/net/phy/bcm84881.c                      |  10 +
++ drivers/net/phy/marvell.c                       |  48 ++++
++ drivers/net/phy/phy.c                           |  52 ++++
++ drivers/net/phy/phylink.c                       | 352 +++++++++++++++++++-----
++ include/linux/phy.h                             |  34 +++
++ include/linux/phylink.h                         |  17 ++
++ 11 files changed, 539 insertions(+), 92 deletions(-)
++
++--- a/drivers/net/phy/phylink.c
+++++ b/drivers/net/phy/phylink.c
++@@ -56,7 +56,8 @@ struct phylink {
++ 	struct phy_device *phydev;
++ 	phy_interface_t link_interface;	/* PHY_INTERFACE_xxx */
++ 	u8 cfg_link_an_mode;		/* MLO_AN_xxx */
++-	u8 cur_link_an_mode;
+++	u8 req_link_an_mode;		/* Requested MLO_AN_xxx mode */
+++	u8 act_link_an_mode;		/* Active MLO_AN_xxx mode */
++ 	u8 link_port;			/* The current non-phy ethtool port */
++ 	__ETHTOOL_DECLARE_LINK_MODE_MASK(supported);
++ 
++@@ -74,6 +75,7 @@ struct phylink {
++ 
++ 	struct mutex state_mutex;
++ 	struct phylink_link_state phy_state;
+++	unsigned int phy_ib_mode;
++ 	struct work_struct resolve;
++ 	unsigned int pcs_neg_mode;
++ 	unsigned int pcs_state;
++@@ -175,6 +177,24 @@ static const char *phylink_an_mode_str(u
++ 	return mode < ARRAY_SIZE(modestr) ? modestr[mode] : "unknown";
++ }
++ 
+++static const char *phylink_pcs_mode_str(unsigned int mode)
+++{
+++	if (!mode)
+++		return "none";
+++
+++	if (mode & PHYLINK_PCS_NEG_OUTBAND)
+++		return "outband";
+++
+++	if (mode & PHYLINK_PCS_NEG_INBAND) {
+++		if (mode & PHYLINK_PCS_NEG_ENABLED)
+++			return "inband,an-enabled";
+++		else
+++			return "inband,an-disabled";
+++	}
+++
+++	return "unknown";
+++}
+++
++ static unsigned int phylink_interface_signal_rate(phy_interface_t interface)
++ {
++ 	switch (interface) {
++@@ -1053,6 +1073,15 @@ static void phylink_resolve_an_pause(str
++ 	}
++ }
++ 
+++static unsigned int phylink_pcs_inband_caps(struct phylink_pcs *pcs,
+++				    phy_interface_t interface)
+++{
+++	if (pcs && pcs->ops->pcs_inband_caps)
+++		return pcs->ops->pcs_inband_caps(pcs, interface);
+++
+++	return 0;
+++}
+++
++ static void phylink_pcs_pre_config(struct phylink_pcs *pcs,
++ 				   phy_interface_t interface)
++ {
++@@ -1106,6 +1135,24 @@ static void phylink_pcs_link_up(struct p
++ 		pcs->ops->pcs_link_up(pcs, neg_mode, interface, speed, duplex);
++ }
++ 
+++/* Query inband for a specific interface mode, asking the MAC for the
+++ * PCS which will be used to handle the interface mode.
+++ */
+++static unsigned int phylink_inband_caps(struct phylink *pl,
+++					 phy_interface_t interface)
+++{
+++	struct phylink_pcs *pcs;
+++
+++	if (!pl->mac_ops->mac_select_pcs)
+++		return 0;
+++
+++	pcs = pl->mac_ops->mac_select_pcs(pl->config, interface);
+++	if (!pcs)
+++		return 0;
+++
+++	return phylink_pcs_inband_caps(pcs, interface);
+++}
+++
++ static void phylink_pcs_poll_stop(struct phylink *pl)
++ {
++ 	if (pl->cfg_link_an_mode == MLO_AN_INBAND)
++@@ -1132,13 +1179,13 @@ static void phylink_mac_config(struct ph
++ 
++ 	phylink_dbg(pl,
++ 		    "%s: mode=%s/%s/%s adv=%*pb pause=%02x\n",
++-		    __func__, phylink_an_mode_str(pl->cur_link_an_mode),
+++		    __func__, phylink_an_mode_str(pl->act_link_an_mode),
++ 		    phy_modes(st.interface),
++ 		    phy_rate_matching_to_str(st.rate_matching),
++ 		    __ETHTOOL_LINK_MODE_MASK_NBITS, st.advertising,
++ 		    st.pause);
++ 
++-	pl->mac_ops->mac_config(pl->config, pl->cur_link_an_mode, &st);
+++	pl->mac_ops->mac_config(pl->config, pl->act_link_an_mode, &st);
++ }
++ 
++ static void phylink_pcs_an_restart(struct phylink *pl)
++@@ -1146,13 +1193,14 @@ static void phylink_pcs_an_restart(struc
++ 	if (pl->pcs && linkmode_test_bit(ETHTOOL_LINK_MODE_Autoneg_BIT,
++ 					 pl->link_config.advertising) &&
++ 	    phy_interface_mode_is_8023z(pl->link_config.interface) &&
++-	    phylink_autoneg_inband(pl->cur_link_an_mode))
+++	    phylink_autoneg_inband(pl->act_link_an_mode))
++ 		pl->pcs->ops->pcs_an_restart(pl->pcs);
++ }
++ 
++ /**
++  * phylink_pcs_neg_mode() - helper to determine PCS inband mode
++- * @mode: one of %MLO_AN_FIXED, %MLO_AN_PHY, %MLO_AN_INBAND.
+++ * @pl: a pointer to a &struct phylink returned from phylink_create()
+++ * @pcs: a pointer to &struct phylink_pcs
++  * @interface: interface mode to be used
++  * @advertising: adertisement ethtool link mode mask
++  *
++@@ -1169,11 +1217,21 @@ static void phylink_pcs_an_restart(struc
++  * Note: this is for cases where the PCS itself is involved in negotiation
++  * (e.g. Clause 37, SGMII and similar) not Clause 73.
++  */
++-static unsigned int phylink_pcs_neg_mode(unsigned int mode,
++-					 phy_interface_t interface,
++-					 const unsigned long *advertising)
+++static void phylink_pcs_neg_mode(struct phylink *pl, struct phylink_pcs *pcs,
+++				 phy_interface_t interface,
+++				 const unsigned long *advertising)
++ {
++-	unsigned int neg_mode;
+++	unsigned int pcs_ib_caps = 0;
+++	unsigned int phy_ib_caps = 0;
+++	unsigned int neg_mode, mode;
+++	enum {
+++		INBAND_CISCO_SGMII,
+++		INBAND_BASEX,
+++	} type;
+++
+++	mode = pl->req_link_an_mode;
+++
+++	pl->phy_ib_mode = 0;
++ 
++ 	switch (interface) {
++ 	case PHY_INTERFACE_MODE_SGMII:
++@@ -1185,10 +1243,7 @@ static unsigned int phylink_pcs_neg_mode
++ 		 * inband communication. Note: there exist PHYs that run
++ 		 * with SGMII but do not send the inband data.
++ 		 */
++-		if (!phylink_autoneg_inband(mode))
++-			neg_mode = PHYLINK_PCS_NEG_OUTBAND;
++-		else
++-			neg_mode = PHYLINK_PCS_NEG_INBAND_ENABLED;
+++		type = INBAND_CISCO_SGMII;
++ 		break;
++ 
++ 	case PHY_INTERFACE_MODE_1000BASEX:
++@@ -1199,21 +1254,143 @@ static unsigned int phylink_pcs_neg_mode
++ 		 * as well, but drivers may not support this, so may
++ 		 * need to override this.
++ 		 */
++-		if (!phylink_autoneg_inband(mode))
+++		type = INBAND_BASEX;
+++		break;
+++
+++	default:
+++		pl->pcs_neg_mode = PHYLINK_PCS_NEG_NONE;
+++		pl->act_link_an_mode = mode;
+++		return;
+++	}
+++
+++	if (pcs)
+++		pcs_ib_caps = phylink_pcs_inband_caps(pcs, interface);
+++
+++	if (pl->phydev)
+++		phy_ib_caps = phy_inband_caps(pl->phydev, interface);
+++
+++	phylink_dbg(pl, "interface %s inband modes: pcs=%02x phy=%02x\n",
+++		    phy_modes(interface), pcs_ib_caps, phy_ib_caps);
+++
+++	if (!phylink_autoneg_inband(mode)) {
+++		bool pcs_ib_only = false;
+++		bool phy_ib_only = false;
+++
+++		if (pcs_ib_caps && pcs_ib_caps != LINK_INBAND_DISABLE) {
+++			/* PCS supports reporting in-band capabilities, and
+++			 * supports more than disable mode.
+++			 */
+++			if (pcs_ib_caps & LINK_INBAND_DISABLE)
+++				neg_mode = PHYLINK_PCS_NEG_OUTBAND;
+++			else if (pcs_ib_caps & LINK_INBAND_ENABLE)
+++				pcs_ib_only = true;
+++		}
+++
+++		if (phy_ib_caps && phy_ib_caps != LINK_INBAND_DISABLE) {
+++			/* PHY supports in-band capabilities, and supports
+++			 * more than disable mode.
+++			 */
+++			if (phy_ib_caps & LINK_INBAND_DISABLE)
+++				pl->phy_ib_mode = LINK_INBAND_DISABLE;
+++			else if (phy_ib_caps & LINK_INBAND_BYPASS)
+++				pl->phy_ib_mode = LINK_INBAND_BYPASS;
+++			else if (phy_ib_caps & LINK_INBAND_ENABLE)
+++				phy_ib_only = true;
+++		}
+++
+++		/* If either the PCS or PHY requires inband to be enabled,
+++		 * this is an invalid configuration. Provide a diagnostic
+++		 * message for this case, but don't try to force the issue.
+++		 */
+++		if (pcs_ib_only || phy_ib_only)
+++			phylink_warn(pl,
+++				     "firmware wants %s mode, but %s%s%s requires inband\n",
+++				     phylink_an_mode_str(mode),
+++				     pcs_ib_only ? "PCS" : "",
+++				     pcs_ib_only && phy_ib_only ? " and " : "",
+++				     phy_ib_only ? "PHY" : "");
+++
+++		neg_mode = PHYLINK_PCS_NEG_OUTBAND;
+++	} else if (type == INBAND_CISCO_SGMII || pl->phydev) {
+++		/* For SGMII modes which are designed to be used with PHYs, or
+++		 * Base-X with a PHY, we try to use in-band mode where-ever
+++		 * possible. However, there are some PHYs e.g. BCM84881 which
+++		 * do not support in-band.
+++		 */
+++		const unsigned int inband_ok = LINK_INBAND_ENABLE |
+++					       LINK_INBAND_BYPASS;
+++		const unsigned int outband_ok = LINK_INBAND_DISABLE |
+++						LINK_INBAND_BYPASS;
+++		/* PCS	PHY
+++		 * D E	D E
+++		 * 0 0  0 0	no information			inband enabled
+++		 * 1 0  0 0	pcs doesn't support		outband
+++		 * 0 1  0 0	pcs required			inband enabled
+++		 * 1 1  0 0	pcs optional			inband enabled
+++		 * 0 0  1 0	phy doesn't support		outband
+++		 * 1 0  1 0	pcs+phy doesn't support		outband
+++		 * 0 1  1 0	pcs required, phy doesn't support, invalid
+++		 * 1 1  1 0	pcs optional, phy doesn't support, outband
+++		 * 0 0  0 1	phy required			inband enabled
+++		 * 1 0  0 1	pcs doesn't support, phy required, invalid
+++		 * 0 1  0 1	pcs+phy required		inband enabled
+++		 * 1 1  0 1	pcs optional, phy required	inband enabled
+++		 * 0 0  1 1	phy optional			inband enabled
+++		 * 1 0  1 1	pcs doesn't support, phy optional, outband
+++		 * 0 1  1 1	pcs required, phy optional	inband enabled
+++		 * 1 1  1 1	pcs+phy optional		inband enabled
+++		 */
+++		if ((!pcs_ib_caps || pcs_ib_caps & inband_ok) &&
+++		    (!phy_ib_caps || phy_ib_caps & inband_ok)) {
+++			/* In-band supported or unknown at both ends. Enable
+++			 * in-band mode with or without bypass at the PHY.
+++			 */
+++			if (phy_ib_caps & LINK_INBAND_ENABLE)
+++				pl->phy_ib_mode = LINK_INBAND_ENABLE;
+++			else if (phy_ib_caps & LINK_INBAND_BYPASS)
+++				pl->phy_ib_mode = LINK_INBAND_BYPASS;
+++
+++			neg_mode = PHYLINK_PCS_NEG_INBAND_ENABLED;
+++		} else if ((!pcs_ib_caps || pcs_ib_caps & outband_ok) &&
+++			   (!phy_ib_caps || phy_ib_caps & outband_ok)) {
+++			/* Either in-band not supported at at least one end.
+++			 * In-band bypass at the other end is possible.
+++			 */
+++			if (phy_ib_caps & LINK_INBAND_DISABLE)
+++				pl->phy_ib_mode = LINK_INBAND_DISABLE;
+++			else if (phy_ib_caps & LINK_INBAND_BYPASS)
+++				pl->phy_ib_mode = LINK_INBAND_BYPASS;
+++
++ 			neg_mode = PHYLINK_PCS_NEG_OUTBAND;
+++			if (pl->phydev)
+++				mode = MLO_AN_PHY;
+++		} else {
+++			/* invalid */
+++			phylink_warn(pl, "%s: incompatible in-band capabilities, trying in-band",
+++				     phy_modes(interface));
+++			neg_mode = PHYLINK_PCS_NEG_INBAND_ENABLED;
+++		}
+++	} else {
+++		/* For Base-X without a PHY */
+++		if (pcs_ib_caps == LINK_INBAND_DISABLE)
+++			/* If the PCS doesn't support inband, then inband must
+++			 * be disabled.
+++			 */
+++			neg_mode = PHYLINK_PCS_NEG_INBAND_DISABLED;
+++		else if (pcs_ib_caps == LINK_INBAND_ENABLE)
+++			/* If the PCS requires inband, then inband must always
+++			 * be enabled.
+++			 */
+++			neg_mode = PHYLINK_PCS_NEG_INBAND_ENABLED;
++ 		else if (linkmode_test_bit(ETHTOOL_LINK_MODE_Autoneg_BIT,
++ 					   advertising))
++ 			neg_mode = PHYLINK_PCS_NEG_INBAND_ENABLED;
++ 		else
++ 			neg_mode = PHYLINK_PCS_NEG_INBAND_DISABLED;
++-		break;
++-
++-	default:
++-		neg_mode = PHYLINK_PCS_NEG_NONE;
++-		break;
++ 	}
++ 
++-	return neg_mode;
+++	pl->pcs_neg_mode = neg_mode;
+++	pl->act_link_an_mode = mode;
++ }
++ 
++ static void phylink_major_config(struct phylink *pl, bool restart,
++@@ -1225,11 +1402,9 @@ static void phylink_major_config(struct
++ 	unsigned int neg_mode;
++ 	int err;
++ 
++-	phylink_dbg(pl, "major config %s\n", phy_modes(state->interface));
++-
++-	pl->pcs_neg_mode = phylink_pcs_neg_mode(pl->cur_link_an_mode,
++-						state->interface,
++-						state->advertising);
+++	phylink_dbg(pl, "major config, requested %s/%s\n",
+++		    phylink_an_mode_str(pl->req_link_an_mode),
+++		    phy_modes(state->interface));
++ 
++ 	if (pl->using_mac_select_pcs) {
++ 		pcs = pl->mac_ops->mac_select_pcs(pl->config, state->interface);
++@@ -1243,10 +1418,17 @@ static void phylink_major_config(struct
++ 		pcs_changed = pcs && pl->pcs != pcs;
++ 	}
++ 
+++	phylink_pcs_neg_mode(pl, pcs, state->interface, state->advertising);
+++
+++	phylink_dbg(pl, "major config, active %s/%s/%s\n",
+++		    phylink_an_mode_str(pl->act_link_an_mode),
+++		    phylink_pcs_mode_str(pl->pcs_neg_mode),
+++		    phy_modes(state->interface));
+++
++ 	phylink_pcs_poll_stop(pl);
++ 
++ 	if (pl->mac_ops->mac_prepare) {
++-		err = pl->mac_ops->mac_prepare(pl->config, pl->cur_link_an_mode,
+++		err = pl->mac_ops->mac_prepare(pl->config, pl->act_link_an_mode,
++ 					       state->interface);
++ 		if (err < 0) {
++ 			phylink_err(pl, "mac_prepare failed: %pe\n",
++@@ -1280,7 +1462,7 @@ static void phylink_major_config(struct
++ 	if (pl->pcs_state == PCS_STATE_STARTING || pcs_changed)
++ 		phylink_pcs_enable(pl->pcs);
++ 
++-	neg_mode = pl->cur_link_an_mode;
+++	neg_mode = pl->act_link_an_mode;
++ 	if (pl->pcs && pl->pcs->neg_mode)
++ 		neg_mode = pl->pcs_neg_mode;
++ 
++@@ -1296,13 +1478,20 @@ static void phylink_major_config(struct
++ 		phylink_pcs_an_restart(pl);
++ 
++ 	if (pl->mac_ops->mac_finish) {
++-		err = pl->mac_ops->mac_finish(pl->config, pl->cur_link_an_mode,
+++		err = pl->mac_ops->mac_finish(pl->config, pl->act_link_an_mode,
++ 					      state->interface);
++ 		if (err < 0)
++ 			phylink_err(pl, "mac_finish failed: %pe\n",
++ 				    ERR_PTR(err));
++ 	}
++ 
+++	if (pl->phydev && pl->phy_ib_mode) {
+++		err = phy_config_inband(pl->phydev, pl->phy_ib_mode);
+++		if (err < 0)
+++			phylink_err(pl, "phy_config_inband: %pe\n",
+++				    ERR_PTR(err));
+++	}
+++
++ 	if (pl->sfp_bus) {
++ 		rate_kbd = phylink_interface_signal_rate(state->interface);
++ 		if (rate_kbd)
++@@ -1327,17 +1516,16 @@ static int phylink_change_inband_advert(
++ 		return 0;
++ 
++ 	phylink_dbg(pl, "%s: mode=%s/%s adv=%*pb pause=%02x\n", __func__,
++-		    phylink_an_mode_str(pl->cur_link_an_mode),
+++		    phylink_an_mode_str(pl->req_link_an_mode),
++ 		    phy_modes(pl->link_config.interface),
++ 		    __ETHTOOL_LINK_MODE_MASK_NBITS, pl->link_config.advertising,
++ 		    pl->link_config.pause);
++ 
++ 	/* Recompute the PCS neg mode */
++-	pl->pcs_neg_mode = phylink_pcs_neg_mode(pl->cur_link_an_mode,
++-					pl->link_config.interface,
++-					pl->link_config.advertising);
+++	phylink_pcs_neg_mode(pl, pl->pcs, pl->link_config.interface,
+++			     pl->link_config.advertising);
++ 
++-	neg_mode = pl->cur_link_an_mode;
+++	neg_mode = pl->act_link_an_mode;
++ 	if (pl->pcs->neg_mode)
++ 		neg_mode = pl->pcs_neg_mode;
++ 
++@@ -1402,7 +1590,7 @@ static void phylink_mac_initial_config(s
++ {
++ 	struct phylink_link_state link_state;
++ 
++-	switch (pl->cur_link_an_mode) {
+++	switch (pl->req_link_an_mode) {
++ 	case MLO_AN_PHY:
++ 		link_state = pl->phy_state;
++ 		break;
++@@ -1476,14 +1664,14 @@ static void phylink_link_up(struct phyli
++ 
++ 	pl->cur_interface = link_state.interface;
++ 
++-	neg_mode = pl->cur_link_an_mode;
+++	neg_mode = pl->act_link_an_mode;
++ 	if (pl->pcs && pl->pcs->neg_mode)
++ 		neg_mode = pl->pcs_neg_mode;
++ 
++ 	phylink_pcs_link_up(pl->pcs, neg_mode, pl->cur_interface, speed,
++ 			    duplex);
++ 
++-	pl->mac_ops->mac_link_up(pl->config, pl->phydev, pl->cur_link_an_mode,
+++	pl->mac_ops->mac_link_up(pl->config, pl->phydev, pl->act_link_an_mode,
++ 				 pl->cur_interface, speed, duplex,
++ 				 !!(link_state.pause & MLO_PAUSE_TX), rx_pause);
++ 
++@@ -1503,7 +1691,7 @@ static void phylink_link_down(struct phy
++ 
++ 	if (ndev)
++ 		netif_carrier_off(ndev);
++-	pl->mac_ops->mac_link_down(pl->config, pl->cur_link_an_mode,
+++	pl->mac_ops->mac_link_down(pl->config, pl->act_link_an_mode,
++ 				   pl->cur_interface);
++ 	phylink_info(pl, "Link is Down\n");
++ }
++@@ -1530,7 +1718,7 @@ static void phylink_resolve(struct work_
++ 		link_state.link = false;
++ 		retrigger = true;
++ 	} else {
++-		switch (pl->cur_link_an_mode) {
+++		switch (pl->act_link_an_mode) {
++ 		case MLO_AN_PHY:
++ 			link_state = pl->phy_state;
++ 			phylink_apply_manual_flow(pl, &link_state);
++@@ -1773,7 +1961,7 @@ struct phylink *phylink_create(struct ph
++ 		}
++ 	}
++ 
++-	pl->cur_link_an_mode = pl->cfg_link_an_mode;
+++	pl->req_link_an_mode = pl->cfg_link_an_mode;
++ 
++ 	ret = phylink_register_sfp(pl, fwnode);
++ 	if (ret < 0) {
++@@ -2236,7 +2424,7 @@ void phylink_start(struct phylink *pl)
++ 	ASSERT_RTNL();
++ 
++ 	phylink_info(pl, "configuring for %s/%s link mode\n",
++-		     phylink_an_mode_str(pl->cur_link_an_mode),
+++		     phylink_an_mode_str(pl->req_link_an_mode),
++ 		     phy_modes(pl->link_config.interface));
++ 
++ 	/* Always set the carrier off */
++@@ -2495,7 +2683,7 @@ int phylink_ethtool_ksettings_get(struct
++ 
++ 	linkmode_copy(kset->link_modes.supported, pl->supported);
++ 
++-	switch (pl->cur_link_an_mode) {
+++	switch (pl->act_link_an_mode) {
++ 	case MLO_AN_FIXED:
++ 		/* We are using fixed settings. Report these as the
++ 		 * current link settings - and note that these also
++@@ -2526,6 +2714,26 @@ int phylink_ethtool_ksettings_get(struct
++ }
++ EXPORT_SYMBOL_GPL(phylink_ethtool_ksettings_get);
++ 
+++static bool phylink_validate_pcs_inband_autoneg(struct phylink *pl,
+++					        phy_interface_t interface,
+++						unsigned long *adv)
+++{
+++	unsigned int inband = phylink_inband_caps(pl, interface);
+++	unsigned int mask;
+++
+++	/* If the PCS doesn't implement inband support, be permissive. */
+++	if (!inband)
+++		return true;
+++
+++	if (linkmode_test_bit(ETHTOOL_LINK_MODE_Autoneg_BIT, adv))
+++		mask = LINK_INBAND_ENABLE;
+++	else
+++		mask = LINK_INBAND_DISABLE;
+++
+++	/* Check whether the PCS implements the required mode */
+++	return !!(inband & mask);
+++}
+++
++ /**
++  * phylink_ethtool_ksettings_set() - set the link settings
++  * @pl: a pointer to a &struct phylink returned from phylink_create()
++@@ -2587,7 +2795,7 @@ int phylink_ethtool_ksettings_set(struct
++ 		/* If we have a fixed link, refuse to change link parameters.
++ 		 * If the link parameters match, accept them but do nothing.
++ 		 */
++-		if (pl->cur_link_an_mode == MLO_AN_FIXED) {
+++		if (pl->req_link_an_mode == MLO_AN_FIXED) {
++ 			if (s->speed != pl->link_config.speed ||
++ 			    s->duplex != pl->link_config.duplex)
++ 				return -EINVAL;
++@@ -2603,7 +2811,7 @@ int phylink_ethtool_ksettings_set(struct
++ 		 * is our default case) but do not allow the advertisement to
++ 		 * be changed. If the advertisement matches, simply return.
++ 		 */
++-		if (pl->cur_link_an_mode == MLO_AN_FIXED) {
+++		if (pl->req_link_an_mode == MLO_AN_FIXED) {
++ 			if (!linkmode_equal(config.advertising,
++ 					    pl->link_config.advertising))
++ 				return -EINVAL;
++@@ -2643,7 +2851,7 @@ int phylink_ethtool_ksettings_set(struct
++ 		linkmode_copy(support, pl->supported);
++ 		if (phylink_validate(pl, support, &config)) {
++ 			phylink_err(pl, "validation of %s/%s with support %*pb failed\n",
++-				    phylink_an_mode_str(pl->cur_link_an_mode),
+++				    phylink_an_mode_str(pl->req_link_an_mode),
++ 				    phy_modes(config.interface),
++ 				    __ETHTOOL_LINK_MODE_MASK_NBITS, support);
++ 			return -EINVAL;
++@@ -2661,6 +2869,13 @@ int phylink_ethtool_ksettings_set(struct
++ 	    phylink_is_empty_linkmode(config.advertising))
++ 		return -EINVAL;
++ 
+++	/* Validate the autonegotiation state. We don't have a PHY in this
+++	 * situation, so the PCS is the media-facing entity.
+++	 */
+++	if (!phylink_validate_pcs_inband_autoneg(pl, config.interface,
+++						 config.advertising))
+++		return -EINVAL;
+++
++ 	mutex_lock(&pl->state_mutex);
++ 	pl->link_config.speed = config.speed;
++ 	pl->link_config.duplex = config.duplex;
++@@ -2743,7 +2958,7 @@ int phylink_ethtool_set_pauseparam(struc
++ 
++ 	ASSERT_RTNL();
++ 
++-	if (pl->cur_link_an_mode == MLO_AN_FIXED)
+++	if (pl->req_link_an_mode == MLO_AN_FIXED)
++ 		return -EOPNOTSUPP;
++ 
++ 	if (!phylink_test(pl->supported, Pause) &&
++@@ -3007,7 +3222,7 @@ static int phylink_mii_read(struct phyli
++ 	struct phylink_link_state state;
++ 	int val = 0xffff;
++ 
++-	switch (pl->cur_link_an_mode) {
+++	switch (pl->act_link_an_mode) {
++ 	case MLO_AN_FIXED:
++ 		if (phy_id == 0) {
++ 			phylink_get_fixed_state(pl, &state);
++@@ -3032,7 +3247,7 @@ static int phylink_mii_read(struct phyli
++ static int phylink_mii_write(struct phylink *pl, unsigned int phy_id,
++ 			     unsigned int reg, unsigned int val)
++ {
++-	switch (pl->cur_link_an_mode) {
+++	switch (pl->act_link_an_mode) {
++ 	case MLO_AN_FIXED:
++ 		break;
++ 
++@@ -3202,10 +3417,11 @@ static phy_interface_t phylink_choose_sf
++ 	return interface;
++ }
++ 
++-static void phylink_sfp_set_config(struct phylink *pl, u8 mode,
+++static void phylink_sfp_set_config(struct phylink *pl,
++ 				   unsigned long *supported,
++ 				   struct phylink_link_state *state)
++ {
+++	u8 mode = MLO_AN_INBAND;
++ 	bool changed = false;
++ 
++ 	phylink_dbg(pl, "requesting link mode %s/%s with support %*pb\n",
++@@ -3222,9 +3438,9 @@ static void phylink_sfp_set_config(struc
++ 		changed = true;
++ 	}
++ 
++-	if (pl->cur_link_an_mode != mode ||
+++	if (pl->req_link_an_mode != mode ||
++ 	    pl->link_config.interface != state->interface) {
++-		pl->cur_link_an_mode = mode;
+++		pl->req_link_an_mode = mode;
++ 		pl->link_config.interface = state->interface;
++ 
++ 		changed = true;
++@@ -3239,8 +3455,7 @@ static void phylink_sfp_set_config(struc
++ 		phylink_mac_initial_config(pl, false);
++ }
++ 
++-static int phylink_sfp_config_phy(struct phylink *pl, u8 mode,
++-				  struct phy_device *phy)
+++static int phylink_sfp_config_phy(struct phylink *pl, struct phy_device *phy)
++ {
++ 	__ETHTOOL_DECLARE_LINK_MODE_MASK(support1);
++ 	__ETHTOOL_DECLARE_LINK_MODE_MASK(support);
++@@ -3279,8 +3494,7 @@ static int phylink_sfp_config_phy(struct
++ 	ret = phylink_validate(pl, support1, &config);
++ 	if (ret) {
++ 		phylink_err(pl,
++-			    "validation of %s/%s with support %*pb failed: %pe\n",
++-			    phylink_an_mode_str(mode),
+++			    "validation of %s with support %*pb failed: %pe\n",
++ 			    phy_modes(config.interface),
++ 			    __ETHTOOL_LINK_MODE_MASK_NBITS, support,
++ 			    ERR_PTR(ret));
++@@ -3289,7 +3503,7 @@ static int phylink_sfp_config_phy(struct
++ 
++ 	pl->link_port = pl->sfp_port;
++ 
++-	phylink_sfp_set_config(pl, mode, support, &config);
+++	phylink_sfp_set_config(pl, support, &config);
++ 
++ 	return 0;
++ }
++@@ -3345,6 +3559,12 @@ static int phylink_sfp_config_optical(st
++ 	phylink_dbg(pl, "optical SFP: chosen %s interface\n",
++ 		    phy_modes(interface));
++ 
+++	if (!phylink_validate_pcs_inband_autoneg(pl, interface,
+++						 config.advertising)) {
+++		phylink_err(pl, "autoneg setting not compatible with PCS");
+++		return -EINVAL;
+++	}
+++
++ 	config.interface = interface;
++ 
++ 	/* Ignore errors if we're expecting a PHY to attach later */
++@@ -3358,7 +3578,7 @@ static int phylink_sfp_config_optical(st
++ 
++ 	pl->link_port = pl->sfp_port;
++ 
++-	phylink_sfp_set_config(pl, MLO_AN_INBAND, pl->sfp_support, &config);
+++	phylink_sfp_set_config(pl, pl->sfp_support, &config);
++ 
++ 	return 0;
++ }
++@@ -3429,20 +3649,10 @@ static void phylink_sfp_link_up(void *up
++ 	phylink_enable_and_run_resolve(pl, PHYLINK_DISABLE_LINK);
++ }
++ 
++-/* The Broadcom BCM84881 in the Methode DM7052 is unable to provide a SGMII
++- * or 802.3z control word, so inband will not work.
++- */
++-static bool phylink_phy_no_inband(struct phy_device *phy)
++-{
++-	return phy->is_c45 && phy_id_compare(phy->c45_ids.device_ids[1],
++-					     0xae025150, 0xfffffff0);
++-}
++-
++ static int phylink_sfp_connect_phy(void *upstream, struct phy_device *phy)
++ {
++ 	struct phylink *pl = upstream;
++ 	phy_interface_t interface;
++-	u8 mode;
++ 	int ret;
++ 
++ 	/*
++@@ -3454,17 +3664,12 @@ static int phylink_sfp_connect_phy(void
++ 	 */
++ 	phy_support_asym_pause(phy);
++ 
++-	if (phylink_phy_no_inband(phy))
++-		mode = MLO_AN_PHY;
++-	else
++-		mode = MLO_AN_INBAND;
++-
++ 	/* Set the PHY's host supported interfaces */
++ 	phy_interface_and(phy->host_interfaces, phylink_sfp_interfaces,
++ 			  pl->config->supported_interfaces);
++ 
++ 	/* Do the initial configuration */
++-	ret = phylink_sfp_config_phy(pl, mode, phy);
+++	ret = phylink_sfp_config_phy(pl, phy);
++ 	if (ret < 0)
++ 		return ret;
++ 
++--- a/drivers/net/phy/phy.c
+++++ b/drivers/net/phy/phy.c
++@@ -973,6 +973,58 @@ static int phy_check_link_status(struct
++ }
++ 
++ /**
+++ * phy_inband_caps - query which in-band signalling modes are supported
+++ * @phydev: a pointer to a &struct phy_device
+++ * @interface: the interface mode for the PHY
+++ *
+++ * Returns zero if it is unknown what in-band signalling is supported by the
+++ * PHY (e.g. because the PHY driver doesn't implement the method.) Otherwise,
+++ * returns a bit mask of the LINK_INBAND_* values from
+++ * &enum link_inband_signalling to describe which inband modes are supported
+++ * by the PHY for this interface mode.
+++ */
+++unsigned int phy_inband_caps(struct phy_device *phydev,
+++			     phy_interface_t interface)
+++{
+++	if (phydev->drv && phydev->drv->inband_caps)
+++		return phydev->drv->inband_caps(phydev, interface);
+++
+++	return 0;
+++}
+++EXPORT_SYMBOL_GPL(phy_inband_caps);
+++
+++/**
+++ * phy_config_inband - configure the desired PHY in-band mode
+++ * @phydev: the phy_device struct
+++ * @modes: in-band modes to configure
+++ *
+++ * Description: disables, enables or enables-with-bypass in-band signalling
+++ *   between the PHY and host system.
+++ *
+++ * Returns: zero on success, or negative errno value.
+++ */
+++int phy_config_inband(struct phy_device *phydev, unsigned int modes)
 ++{
 ++	int err;
 ++
-++	err = dsa_register_switch(ds);
-++	if (err)
-++		return err;
+++	if (!!(modes & LINK_INBAND_DISABLE) +
+++	    !!(modes & LINK_INBAND_ENABLE) +
+++	    !!(modes & LINK_INBAND_BYPASS) != 1)
+++		return -EINVAL;
 ++
-++	return devm_add_action_or_reset(dev, devm_dsa_unregister_switch, ds);
+++	mutex_lock(&phydev->lock);
+++	if (!phydev->drv)
+++		err = -EIO;
+++	else if (!phydev->drv->config_inband)
+++		err = -EOPNOTSUPP;
+++	else
+++		err = phydev->drv->config_inband(phydev, modes);
+++	mutex_unlock(&phydev->lock);
+++
+++	return err;
 ++}
-++EXPORT_SYMBOL_GPL(devm_dsa_register_switch);
 ++
-+ static void dsa_switch_remove(struct dsa_switch *ds)
+++/**
++  * _phy_start_aneg - start auto-negotiation for this PHY device
++  * @phydev: the phy_device struct
++  *
++--- a/include/linux/phy.h
+++++ b/include/linux/phy.h
++@@ -800,6 +800,24 @@ struct phy_tdr_config {
++ #define PHY_PAIR_ALL -1
++ 
++ /**
+++ * enum link_inband_signalling - in-band signalling modes that are supported
+++ *
+++ * @LINK_INBAND_DISABLE: in-band signalling can be disabled
+++ * @LINK_INBAND_ENABLE: in-band signalling can be enabled without bypass
+++ * @LINK_INBAND_BYPASS: in-band signalling can be enabled with bypass
+++ *
+++ * The possible and required bits can only be used if the valid bit is set.
+++ * If possible is clear, that means inband signalling can not be used.
+++ * Required is only valid when possible is set, and means that inband
+++ * signalling must be used.
+++ */
+++enum link_inband_signalling {
+++	LINK_INBAND_DISABLE		= BIT(0),
+++	LINK_INBAND_ENABLE		= BIT(1),
+++	LINK_INBAND_BYPASS		= BIT(2),
+++};
+++
+++/**
++  * struct phy_plca_cfg - Configuration of the PLCA (Physical Layer Collision
++  * Avoidance) Reconciliation Sublayer.
++  *
++@@ -939,6 +957,19 @@ struct phy_driver {
++ 	int (*get_features)(struct phy_device *phydev);
++ 
++ 	/**
+++	 * @inband_caps: query whether in-band is supported for the given PHY
+++	 * interface mode. Returns a bitmask of bits defined by enum
+++	 * link_inband_signalling.
+++	 */
+++	unsigned int (*inband_caps)(struct phy_device *phydev,
+++				    phy_interface_t interface);
+++
+++	/**
+++	 * @config_inband: configure in-band mode for the PHY
+++	 */
+++	int (*config_inband)(struct phy_device *phydev, unsigned int modes);
+++
+++	/**
++ 	 * @get_rate_matching: Get the supported type of rate matching for a
++ 	 * particular phy interface. This is used by phy consumers to determine
++ 	 * whether to advertise lower-speed modes for that interface. It is
++@@ -1774,6 +1805,9 @@ void phy_stop(struct phy_device *phydev)
++ int phy_config_aneg(struct phy_device *phydev);
++ int phy_start_aneg(struct phy_device *phydev);
++ int phy_aneg_done(struct phy_device *phydev);
+++unsigned int phy_inband_caps(struct phy_device *phydev,
+++			     phy_interface_t interface);
+++int phy_config_inband(struct phy_device *phydev, unsigned int modes);
++ int phy_speed_down(struct phy_device *phydev, bool sync);
++ int phy_speed_up(struct phy_device *phydev);
++ bool phy_check_valid(int speed, int duplex, unsigned long *features);
++--- a/drivers/net/phy/bcm84881.c
+++++ b/drivers/net/phy/bcm84881.c
++@@ -223,11 +223,21 @@ static int bcm84881_read_status(struct p
++ 	return genphy_c45_read_mdix(phydev);
++ }
++ 
+++/* The Broadcom BCM84881 in the Methode DM7052 is unable to provide a SGMII
+++ * or 802.3z control word, so inband will not work.
+++ */
+++static unsigned int bcm84881_inband_caps(struct phy_device *phydev,
+++					 phy_interface_t interface)
+++{
+++	return LINK_INBAND_DISABLE;
+++}
+++
++ static struct phy_driver bcm84881_drivers[] = {
++ 	{
++ 		.phy_id		= 0xae025150,
++ 		.phy_id_mask	= 0xfffffff0,
++ 		.name		= "Broadcom BCM84881",
+++		.inband_caps	= bcm84881_inband_caps,
++ 		.config_init	= bcm84881_config_init,
++ 		.probe		= bcm84881_probe,
++ 		.get_features	= bcm84881_get_features,
++--- a/drivers/net/phy/marvell.c
+++++ b/drivers/net/phy/marvell.c
++@@ -673,6 +673,48 @@ static int marvell_config_aneg_fiber(str
++ 	return genphy_check_and_restart_aneg(phydev, changed);
++ }
++ 
+++static unsigned int m88e1111_inband_caps(struct phy_device *phydev,
+++					 phy_interface_t interface)
+++{
+++	/* In 1000base-X and SGMII modes, the inband mode can be changed
+++	 * through the Fibre page BMCR ANENABLE bit.
+++	 */
+++	if (interface == PHY_INTERFACE_MODE_1000BASEX ||
+++	    interface == PHY_INTERFACE_MODE_SGMII)
+++		return LINK_INBAND_DISABLE | LINK_INBAND_ENABLE |
+++		       LINK_INBAND_BYPASS;
+++
+++	return 0;
+++}
+++
+++static int m88e1111_config_inband(struct phy_device *phydev, unsigned int modes)
+++{
+++	u16 extsr, bmcr;
+++	int err;
+++
+++	if (phydev->interface != PHY_INTERFACE_MODE_1000BASEX &&
+++	    phydev->interface != PHY_INTERFACE_MODE_SGMII)
+++		return -EINVAL;
+++
+++	if (modes == LINK_INBAND_BYPASS)
+++		extsr = MII_M1111_HWCFG_SERIAL_AN_BYPASS;
+++	else
+++		extsr = 0;
+++
+++	if (modes == LINK_INBAND_DISABLE)
+++		bmcr = 0;
+++	else
+++		bmcr = BMCR_ANENABLE;
+++
+++	err = phy_modify(phydev, MII_M1111_PHY_EXT_SR,
+++			 MII_M1111_HWCFG_SERIAL_AN_BYPASS, extsr);
+++	if (err < 0)
+++		return extsr;
+++
+++	return phy_modify_paged(phydev, MII_MARVELL_FIBER_PAGE, MII_BMCR,
+++				BMCR_ANENABLE, bmcr);
+++}
+++
++ static int m88e1111_config_aneg(struct phy_device *phydev)
 + {
-+ 	struct dsa_switch_tree *dst = ds->dst;
++ 	int extsr = phy_read(phydev, MII_M1111_PHY_EXT_SR);
++@@ -3292,6 +3334,8 @@ static struct phy_driver marvell_drivers
++ 		.name = "Marvell 88E1112",
++ 		/* PHY_GBIT_FEATURES */
++ 		.probe = marvell_probe,
+++		.inband_caps = m88e1111_inband_caps,
+++		.config_inband = m88e1111_config_inband,
++ 		.config_init = m88e1112_config_init,
++ 		.config_aneg = marvell_config_aneg,
++ 		.config_intr = marvell_config_intr,
++@@ -3312,6 +3356,8 @@ static struct phy_driver marvell_drivers
++ 		.name = "Marvell 88E1111",
++ 		/* PHY_GBIT_FEATURES */
++ 		.probe = marvell_probe,
+++		.inband_caps = m88e1111_inband_caps,
+++		.config_inband = m88e1111_config_inband,
++ 		.config_init = m88e1111gbe_config_init,
++ 		.config_aneg = m88e1111_config_aneg,
++ 		.read_status = marvell_read_status,
++@@ -3333,6 +3379,8 @@ static struct phy_driver marvell_drivers
++ 		.name = "Marvell 88E1111 (Finisar)",
++ 		/* PHY_GBIT_FEATURES */
++ 		.probe = marvell_probe,
+++		.inband_caps = m88e1111_inband_caps,
+++		.config_inband = m88e1111_config_inband,
++ 		.config_init = m88e1111gbe_config_init,
++ 		.config_aneg = m88e1111_config_aneg,
++ 		.read_status = marvell_read_status,
++--- a/include/linux/phylink.h
+++++ b/include/linux/phylink.h
++@@ -432,6 +432,7 @@ struct phylink_pcs {
++ /**
++  * struct phylink_pcs_ops - MAC PCS operations structure.
++  * @pcs_validate: validate the link configuration.
+++ * @pcs_inband_caps: query inband support for interface mode.
++  * @pcs_enable: enable the PCS.
++  * @pcs_disable: disable the PCS.
++  * @pcs_pre_config: pre-mac_config method (for errata)
++@@ -445,6 +446,8 @@ struct phylink_pcs {
++ struct phylink_pcs_ops {
++ 	int (*pcs_validate)(struct phylink_pcs *pcs, unsigned long *supported,
++ 			    const struct phylink_link_state *state);
+++	unsigned int (*pcs_inband_caps)(struct phylink_pcs *pcs,
+++					phy_interface_t interface);
++ 	int (*pcs_enable)(struct phylink_pcs *pcs);
++ 	void (*pcs_disable)(struct phylink_pcs *pcs);
++ 	void (*pcs_pre_config)(struct phylink_pcs *pcs,
++@@ -481,6 +484,20 @@ int pcs_validate(struct phylink_pcs *pcs
++ 		 const struct phylink_link_state *state);
++ 
++ /**
+++ * pcs_inband_caps - query PCS in-band capabilities for interface mode.
+++ * @pcs: a pointer to a &struct phylink_pcs.
+++ * @interface: interface mode to be queried
+++ *
+++ * Returns zero if it is unknown what in-band signalling is supported by the
+++ * PHY (e.g. because the PHY driver doesn't implement the method.) Otherwise,
+++ * returns a bit mask of the LINK_INBAND_* values from
+++ * &enum link_inband_signalling to describe which inband modes are supported
+++ * for this interface mode.
+++ */
+++unsigned int pcs_inband_caps(struct phylink_pcs *pcs,
+++			     phy_interface_t interface);
+++
+++/**
++  * pcs_enable() - enable the PCS.
++  * @pcs: a pointer to a &struct phylink_pcs.
++  */
++--- a/drivers/net/ethernet/marvell/mvneta.c
+++++ b/drivers/net/ethernet/marvell/mvneta.c
++@@ -3959,20 +3959,27 @@ static struct mvneta_port *mvneta_pcs_to
++ 	return container_of(pcs, struct mvneta_port, phylink_pcs);
++ }
++ 
++-static int mvneta_pcs_validate(struct phylink_pcs *pcs,
++-			       unsigned long *supported,
++-			       const struct phylink_link_state *state)
+++static unsigned int mvneta_pcs_inband_caps(struct phylink_pcs *pcs,
+++					   phy_interface_t interface)
++ {
++-	/* We only support QSGMII, SGMII, 802.3z and RGMII modes.
++-	 * When in 802.3z mode, we must have AN enabled:
+++	/* When operating in an 802.3z mode, we must have AN enabled:
++ 	 * "Bit 2 Field InBandAnEn In-band Auto-Negotiation enable. ...
++ 	 * When <PortType> = 1 (1000BASE-X) this field must be set to 1."
+++	 * Therefore, inband is "required".
++ 	 */
++-	if (phy_interface_mode_is_8023z(state->interface) &&
++-	    !phylink_test(state->advertising, Autoneg))
++-		return -EINVAL;
+++	if (phy_interface_mode_is_8023z(interface))
+++		return LINK_INBAND_ENABLE;
++ 
++-	return 0;
+++	/* QSGMII, SGMII and RGMII can be configured to use inband
+++	 * signalling of the AN result. Indicate these as "possible".
+++	 */
+++	if (interface == PHY_INTERFACE_MODE_SGMII ||
+++	    interface == PHY_INTERFACE_MODE_QSGMII ||
+++	    phy_interface_mode_is_rgmii(interface))
+++		return LINK_INBAND_DISABLE | LINK_INBAND_ENABLE;
+++
+++	/* For any other modes, indicate that inband is not supported. */
+++	return LINK_INBAND_DISABLE;
++ }
++ 
++ static void mvneta_pcs_get_state(struct phylink_pcs *pcs,
++@@ -4070,7 +4077,7 @@ static void mvneta_pcs_an_restart(struct
++ }
++ 
++ static const struct phylink_pcs_ops mvneta_phylink_pcs_ops = {
++-	.pcs_validate = mvneta_pcs_validate,
+++	.pcs_inband_caps = mvneta_pcs_inband_caps,
++ 	.pcs_get_state = mvneta_pcs_get_state,
++ 	.pcs_config = mvneta_pcs_config,
++ 	.pcs_an_restart = mvneta_pcs_an_restart,
++--- a/drivers/net/ethernet/marvell/mvpp2/mvpp2_main.c
+++++ b/drivers/net/ethernet/marvell/mvpp2/mvpp2_main.c
++@@ -6214,19 +6214,26 @@ static const struct phylink_pcs_ops mvpp
++ 	.pcs_config = mvpp2_xlg_pcs_config,
++ };
++ 
++-static int mvpp2_gmac_pcs_validate(struct phylink_pcs *pcs,
++-				   unsigned long *supported,
++-				   const struct phylink_link_state *state)
+++static unsigned int mvpp2_gmac_pcs_inband_caps(struct phylink_pcs *pcs,
+++					       phy_interface_t interface)
++ {
++-	/* When in 802.3z mode, we must have AN enabled:
+++	/* When operating in an 802.3z mode, we must have AN enabled:
++ 	 * Bit 2 Field InBandAnEn In-band Auto-Negotiation enable. ...
++ 	 * When <PortType> = 1 (1000BASE-X) this field must be set to 1.
+++	 * Therefore, inband is "required".
++ 	 */
++-	if (phy_interface_mode_is_8023z(state->interface) &&
++-	    !phylink_test(state->advertising, Autoneg))
++-		return -EINVAL;
+++	if (phy_interface_mode_is_8023z(interface))
+++		return LINK_INBAND_ENABLE;
++ 
++-	return 0;
+++	/* SGMII and RGMII can be configured to use inband signalling of the
+++	 * AN result. Indicate these as "possible".
+++	 */
+++	if (interface == PHY_INTERFACE_MODE_SGMII ||
+++	    phy_interface_mode_is_rgmii(interface))
+++		return LINK_INBAND_DISABLE | LINK_INBAND_ENABLE;
+++
+++	/* For any other modes, indicate that inband is not supported. */
+++	return LINK_INBAND_DISABLE;
++ }
++ 
++ static void mvpp2_gmac_pcs_get_state(struct phylink_pcs *pcs,
++@@ -6333,7 +6340,7 @@ static void mvpp2_gmac_pcs_an_restart(st
++ }
++ 
++ static const struct phylink_pcs_ops mvpp2_phylink_gmac_pcs_ops = {
++-	.pcs_validate = mvpp2_gmac_pcs_validate,
+++	.pcs_inband_caps = mvpp2_gmac_pcs_inband_caps,
++ 	.pcs_get_state = mvpp2_gmac_pcs_get_state,
++ 	.pcs_config = mvpp2_gmac_pcs_config,
++ 	.pcs_an_restart = mvpp2_gmac_pcs_an_restart,
++--- a/drivers/net/pcs/pcs-lynx.c
+++++ b/drivers/net/pcs/pcs-lynx.c
++@@ -35,6 +35,27 @@ enum sgmii_speed {
++ #define phylink_pcs_to_lynx(pl_pcs) container_of((pl_pcs), struct lynx_pcs, pcs)
++ #define lynx_to_phylink_pcs(lynx) (&(lynx)->pcs)
++ 
+++static unsigned int lynx_pcs_inband_caps(struct phylink_pcs *pcs,
+++					 phy_interface_t interface)
+++{
+++	switch (interface) {
+++	case PHY_INTERFACE_MODE_1000BASEX:
+++	case PHY_INTERFACE_MODE_SGMII:
+++	case PHY_INTERFACE_MODE_QSGMII:
+++		return LINK_INBAND_DISABLE | LINK_INBAND_ENABLE;
+++
+++	case PHY_INTERFACE_MODE_10GBASER:
+++	case PHY_INTERFACE_MODE_2500BASEX:
+++		return LINK_INBAND_DISABLE;
+++
+++	case PHY_INTERFACE_MODE_USXGMII:
+++		return LINK_INBAND_ENABLE;
+++
+++	default:
+++		return 0;
+++	}
+++}
+++
++ static void lynx_pcs_get_state_usxgmii(struct mdio_device *pcs,
++ 				       struct phylink_link_state *state)
++ {
++@@ -307,6 +328,7 @@ static void lynx_pcs_link_up(struct phyl
++ }
++ 
++ static const struct phylink_pcs_ops lynx_pcs_phylink_ops = {
+++	.pcs_inband_caps = lynx_pcs_inband_caps,
++ 	.pcs_get_state = lynx_pcs_get_state,
++ 	.pcs_config = lynx_pcs_config,
++ 	.pcs_an_restart = lynx_pcs_an_restart,
++--- a/drivers/net/pcs/pcs-mtk-lynxi.c
+++++ b/drivers/net/pcs/pcs-mtk-lynxi.c
++@@ -110,6 +110,21 @@ static struct mtk_pcs_lynxi *pcs_to_mtk_
++ 	return container_of(pcs, struct mtk_pcs_lynxi, pcs);
++ }
++ 
+++static unsigned int mtk_pcs_lynxi_inband_caps(struct phylink_pcs *pcs,
+++					      phy_interface_t interface)
+++{
+++	switch (interface) {
+++	case PHY_INTERFACE_MODE_1000BASEX:
+++	case PHY_INTERFACE_MODE_2500BASEX:
+++	case PHY_INTERFACE_MODE_SGMII:
+++	case PHY_INTERFACE_MODE_QSGMII:
+++		return LINK_INBAND_DISABLE | LINK_INBAND_ENABLE;
+++
+++	default:
+++		return 0;
+++	}
+++}
+++
++ static void mtk_pcs_lynxi_get_state(struct phylink_pcs *pcs,
++ 				    struct phylink_link_state *state)
++ {
++@@ -302,6 +317,7 @@ static void mtk_pcs_lynxi_disable(struct
++ }
++ 
++ static const struct phylink_pcs_ops mtk_pcs_lynxi_ops = {
+++	.pcs_inband_caps = mtk_pcs_lynxi_inband_caps,
++ 	.pcs_get_state = mtk_pcs_lynxi_get_state,
++ 	.pcs_config = mtk_pcs_lynxi_config,
++ 	.pcs_an_restart = mtk_pcs_lynxi_restart_an,
++--- a/drivers/net/pcs/pcs-xpcs.c
+++++ b/drivers/net/pcs/pcs-xpcs.c
++@@ -628,6 +628,33 @@ static int xpcs_validate(struct phylink_
++ 	return 0;
++ }
++ 
+++static unsigned int xpcs_inband_caps(struct phylink_pcs *pcs,
+++				     phy_interface_t interface)
+++{
+++	struct dw_xpcs *xpcs = phylink_pcs_to_xpcs(pcs);
+++	const struct dw_xpcs_compat *compat;
+++
+++	compat = xpcs_find_compat(xpcs, interface);
+++	if (!compat)
+++		return 0;
+++
+++	switch (compat->an_mode) {
+++	case DW_AN_C73:
+++		return LINK_INBAND_ENABLE;
+++
+++	case DW_AN_C37_SGMII:
+++	case DW_AN_C37_1000BASEX:
+++		return LINK_INBAND_DISABLE | LINK_INBAND_ENABLE;
+++
+++	case DW_10GBASER:
+++	case DW_2500BASEX:
+++		return LINK_INBAND_DISABLE;
+++
+++	default:
+++		return 0;
+++	}
+++}
+++
++ void xpcs_get_interfaces(struct dw_xpcs *xpcs, unsigned long *interfaces)
++ {
++ 	int i, j;
++@@ -1331,6 +1358,7 @@ static const struct xpcs_id xpcs_id_list
++ 
++ static const struct phylink_pcs_ops xpcs_phylink_ops = {
++ 	.pcs_validate = xpcs_validate,
+++	.pcs_inband_caps = xpcs_inband_caps,
++ 	.pcs_config = xpcs_config,
++ 	.pcs_get_state = xpcs_get_state,
++ 	.pcs_an_restart = xpcs_an_restart,
