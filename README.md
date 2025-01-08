@@ -1,19 +1,9 @@
 # Collection of OpenWrt patches for Xiaomi AX3000T
 
-## [AN8855](./patches/AN8855-r241130.patch)
+## [Airoha AN8855](./patches/AN8855-r241226.patch)
 
-- Adds support for Airoha AN8855 switch
+- Adds support for Airoha AN8855 switch (v11 patchwork)
 - Issue/PR: https://github.com/openwrt/openwrt/pull/16709
-
-## [Foresee F35SQA002G](./patches/F35SQA002G.patch) and [Foresee F35SQA001G](./patches/F35SQA001G.patch)
-
-- Adds support for Foresee F35SQA002G and F35SQA001G NANDs
-- Issue/PR: https://github.com/openwrt/openwrt/pull/16915
-
-## [SPI NAND use cache first](./patches/mtd-nand-spi-Use-write_cache-first.patch)
-
-- Fixes random issues with Foresee NANDs
-- Issue/PR: https://github.com/openwrt/openwrt/pull/16915#issuecomment-2487184967
 
 ## [NMBM fix for Winbond](./patches/Winbond-NMBM-fix.patch)
 
